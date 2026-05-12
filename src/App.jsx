@@ -636,12 +636,18 @@ function App() {
     localStorage.removeItem("balanco-financeiro:colunas-movidas");
     localStorage.removeItem("balanco-financeiro:ajustes-lancamentos");
     localStorage.removeItem("balanco-financeiro:rendimentos");
+    localStorage.removeItem("balanco-financeiro:colunas-contas");
+    localStorage.removeItem("balanco-financeiro:cores-contas");
+    localStorage.removeItem("balanco-financeiro:mes-ativo");
     localStorage.setItem("balanco-financeiro:reset-version", DATA_RESET_VERSION);
 
     setSavedExpenses([]);
     setMovedColumns({});
     setLedgerOverrides({});
     setMonthlyIncome({});
+    setAccountColumns(spreadsheetColumns);
+    setAccountColors({});
+    setActiveMonthId("2026-05");
     setLastCreatedCount(0);
     setLastCreatedType("");
     setEditingTransaction(null);
@@ -651,7 +657,8 @@ function App() {
 
   function startEditingIncome() {
     const currentValue = monthlyIncome[activeMonth.id] ?? activeMonth.income;
-    setIncomeDraft(String(currentValue).replace(".", ","));
+    const numericValue = Number.parseFloat(String(currentValue).replace(",", "."));
+    setIncomeDraft(numericValue === 0 ? "" : String(currentValue).replace(".", ","));
     setEditingIncome(true);
   }
 
@@ -1113,7 +1120,7 @@ function App() {
                               <strong>{groupedByType[section.key].length}</strong>
                             </div>
                             {groupedByType[section.key].length > 0 ? (
-                              groupedByType[section.key].slice(0, 8).map((transaction) => (
+                              groupedByType[section.key].map((transaction) => (
                                 <div
                                   className={`ledger-item ${section.key} ${transaction.ledgerType === "adjustment" ? "refund-item" : ""}`}
                                   key={transaction.dragId}
