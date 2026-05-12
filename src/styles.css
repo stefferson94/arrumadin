@@ -1410,18 +1410,19 @@ label {
   }
 
   .sidebar {
-    position: fixed;
-    left: 12px;
-    right: 12px;
-    bottom: 12px;
-    z-index: 30;
+    position: static;
+    left: auto;
+    right: auto;
+    bottom: auto;
+    z-index: auto;
+    max-height: none;
     height: auto;
-    padding: 8px;
-    border: 1px solid rgba(31, 38, 35, 0.1);
-    border-radius: 18px;
-    background: rgba(255, 255, 255, 0.92);
-    box-shadow: 0 18px 46px rgba(31, 38, 35, 0.18);
-    backdrop-filter: blur(16px);
+    padding: 8px 0 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    backdrop-filter: none;
     overflow: visible;
   }
 
@@ -1432,16 +1433,19 @@ label {
 
   .nav-list {
     width: 100%;
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    display: flex;
+    justify-content: space-between;
     gap: 4px;
     min-width: 0;
+    overflow-x: auto;
+    padding-bottom: 4px;
   }
 
   .nav-item {
-    min-width: 0;
+    flex: 1 1 0;
+    min-width: 70px;
     min-height: 58px;
-    padding: 7px 4px;
+    padding: 7px 8px;
     flex-direction: column;
     justify-content: center;
     gap: 4px;
@@ -1449,6 +1453,7 @@ label {
     font-size: 0.72rem;
     line-height: 1.1;
     text-align: center;
+    white-space: nowrap;
   }
 
   .nav-item .icon {
