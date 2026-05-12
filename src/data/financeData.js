@@ -3,8 +3,8 @@ export const spreadsheetColumns = [
   "Smiles Infinite",
   "Nubank",
   "Banco do Brasil",
-  "OUTROS",
-  "CONTAS DE CASA"
+  "Outros",
+  "Contas de Casa"
 ];
 
 const monthLabels = [

@@ -217,6 +217,11 @@ function App() {
   const newExpensesTotal = monthExpenses.reduce((sum, expense) => sum + expense.amount, 0);
   const adjustedDebt = activeMonth.debt + newExpensesTotal;
   const adjustedBalance = activeIncome - adjustedDebt;
+  const isOverBudget = adjustedBalance < 0;
+  const spendingRatio = activeIncome ? Math.min(Math.max(adjustedDebt / activeIncome, 0), 1) : 0;
+  const spendingStatus = isOverBudget ? "Pare de gastar" : spendingRatio < 0.65 ? "Sob controle" : "Atenção";
+  const spendingStatusClass = isOverBudget ? "risk" : "normal";
+  const timelineWidth = isOverBudget ? 100 : spendingRatio * 100;
 
   const categoryTotals = useMemo(() => {
     const totals = allTransactions.reduce((map, transaction) => {
@@ -828,17 +833,26 @@ function App() {
             </button>
           ))}
         </nav>
-
-          <div className="sidebar-panel">
-            <span>Situacao do mes</span>
-          <strong>{adjustedBalance >= 0 ? "Sob controle" : "Ajustar gastos"}</strong>
-          <div className="mini-progress">
-            <span style={{ width: `${Math.min(activeIncome ? (adjustedDebt / activeIncome) * 100 : 0, 100)}%` }} />
-          </div>
-        </div>
       </aside>
 
       <section className="content">
+        <div className="sidebar-panel spending-timeline">
+          <div className="timeline-header">
+            <span>Histórico de gastos</span>
+            <strong>{spendingStatus}</strong>
+          </div>
+          <div className="timeline-track">
+            <div className={`timeline-progress ${spendingStatusClass}`} style={{ width: `${timelineWidth}%` }} />
+          </div>
+          <div className="timeline-info">
+            <span>{formatMoney(adjustedDebt)} gastos</span>
+            <span>{formatMoney(activeIncome)} limite</span>
+          </div>
+          {isOverBudget && (
+            <small className="timeline-note">Você está no vermelho — pare de gastar e reveja seu orçamento.</small>
+          )}
+        </div>
+
         <header className="topbar">
           <div className="month-control" aria-label="Selecionar mes">
             <button className="ghost-button" type="button" onClick={() => goToRelativeMonth(-1)} disabled={activeMonthIndex <= 0}>
@@ -1009,8 +1023,16 @@ function App() {
                       role="button"
                       tabIndex={0}
                       aria-expanded={!isCollapsed}
-                      onClick={() => toggleLedgerColumn(column)}
+                      onClick={(event) => {
+                        if (event.target.closest(".editable-column-name")) {
+                          return;
+                        }
+                        toggleLedgerColumn(column);
+                      }}
                       onKeyDown={(event) => {
+                        if (event.target.closest(".editable-column-name")) {
+                          return;
+                        }
                         if (event.key === "Enter" || event.key === " ") {
                           event.preventDefault();
                           toggleLedgerColumn(column);
@@ -1043,22 +1065,19 @@ function App() {
                       </div>
                       <strong
                         className="editable-column-name"
-                        contentEditable={!isMobileLedger}
+                        contentEditable
                         suppressContentEditableWarning
                         spellCheck="false"
-                        title={isMobileLedger ? "Toque no card para expandir" : "Clique para renomear"}
-                        onFocus={(event) => {
-                          if (isMobileLedger) {
-                            event.currentTarget.blur();
-                            return;
-                          }
-
+                        title="Clique para renomear"
+                        onPointerDown={(event) => {
                           event.stopPropagation();
-                          setEditingColumnName(column);
-                          event.currentTarget.textContent = column;
                         }}
                         onClick={(event) => {
-                          if (!isMobileLedger) event.stopPropagation();
+                          event.stopPropagation();
+                        }}
+                        onFocus={(event) => {
+                          event.stopPropagation();
+                          setEditingColumnName(column);
                         }}
                         onBlur={(event) => commitColumnName(column, event.currentTarget.textContent ?? column)}
                         onKeyDown={(event) => {

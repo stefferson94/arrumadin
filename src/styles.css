@@ -115,16 +115,71 @@ button {
 }
 
 .sidebar-panel {
-  margin-top: auto;
-  padding: 16px;
+  display: grid;
+  gap: 12px;
+  padding: 18px;
   border: 1px solid #e2e6e1;
-  border-radius: 12px;
+  border-radius: 14px;
   color: #1f2623;
   background: #fff;
 }
 
 .sidebar-panel span {
   color: #7b837e;
+}
+
+.sidebar-panel strong {
+  display: block;
+  font-size: 1.1rem;
+  margin-top: 4px;
+}
+
+.spending-timeline {
+  margin-bottom: 18px;
+}
+
+.spending-timeline .timeline-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.spending-timeline .timeline-track {
+  position: relative;
+  height: 16px;
+  border-radius: 999px;
+  background: #e7efe8;
+  overflow: hidden;
+}
+
+.spending-timeline .timeline-progress {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.3s ease, background 0.3s ease;
+}
+
+.spending-timeline .timeline-progress.normal {
+  background: linear-gradient(90deg, #2f7f68 0%, #74a86f 40%, #f2c94c 100%);
+}
+
+.spending-timeline .timeline-progress.risk {
+  background: #d93e39;
+}
+
+.spending-timeline .timeline-note {
+  color: #9d3a22;
+  font-size: 0.9rem;
+  line-height: 1.4;
+  margin-top: 10px;
+}
+
+.spending-timeline .timeline-info {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: #7b837e;
+  font-size: 0.92rem;
 }
 
 .sidebar-panel strong {
@@ -1427,7 +1482,7 @@ label {
   }
 
   .brand,
-  .sidebar-panel {
+  .sidebar > .sidebar-panel {
     display: none;
   }
 
