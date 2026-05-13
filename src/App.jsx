@@ -1,56 +1,81 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { months, spreadsheetColumns } from "./data/financeData.js";
-
-const brl = new Intl.NumberFormat("pt-BR", {
-  style: "currency",
-  currency: "BRL"
-});
-
-const DATA_RESET_VERSION = "empty-ledger-v1";
+import {
+  accountTypeLabel,
+  accountTypeOptions,
+  columnClass,
+  columnHeaderStyle,
+  defaultAccountType,
+  defaultColumnColor,
+  normalizeAccountType,
+  normalizeColumn,
+  renameMapValues
+} from "./domain/accounts.js";
+import { categoryTone, normalizeCategory } from "./domain/categories.js";
+import { formatMoney, parseCurrencyInput } from "./domain/money.js";
+import {
+  buildExpensesFromForm,
+  completeMissingInstallments,
+  creationMessage,
+  formatLedgerItemAmount,
+  getInstallmentInfo,
+  groupTransactionsByType,
+  installmentHint,
+  normalizeAmountForType,
+  normalizeLedgerType,
+  parseInstallmentDescription
+} from "./domain/transactions.js";
+import {
+  canUseExpenseStorage,
+  DATA_RESET_VERSION,
+  ensureDataReset,
+  persistExpenses
+} from "./services/storage.js";
 
 const navigationItems = [
   { id: "dashboard", label: "Dashboard", icon: "◼" },
   { id: "lancamentos", label: "Lancamentos", icon: "＋" },
-  { id: "cartoes", label: "Cartoes", icon: "▤" },
+  { id: "cartoes", label: "Contas", icon: "▤" },
   { id: "relatorios", label: "Relatorios", icon: "◒" }
 ];
+
+const defaultActiveView = "lancamentos";
+const navigationItemIds = navigationItems.map((item) => item.id);
 
 const transactionTypeOptions = [
   { value: "single", label: "Unico", icon: "−", hint: "Gasto deste mes" },
   { value: "installment", label: "Parcelado", icon: "÷", hint: "Divide nos meses" },
   { value: "fixed", label: "Fixo", icon: "↻", hint: "Repete todo mes" },
-  { value: "adjustment", label: "Estorno", icon: "+", hint: "Credito no cartao" }
+  { value: "adjustment", label: "Estorno", icon: "+", hint: "Credito na conta" }
 ];
 
-function ensureDataReset() {
-  if (localStorage.getItem("balanco-financeiro:reset-version") === DATA_RESET_VERSION) {
-    return;
-  }
-
-  localStorage.removeItem("balanco-financeiro:gastos");
-  localStorage.removeItem("balanco-financeiro:colunas-movidas");
-  localStorage.removeItem("balanco-financeiro:ajustes-lancamentos");
-  localStorage.setItem("balanco-financeiro:reset-version", DATA_RESET_VERSION);
+function getCurrentMonthId() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 }
 
-function formatMoney(value) {
-  return brl.format(value);
+function getDefaultActiveMonthId() {
+  const currentMonthId = getCurrentMonthId();
+  const savedMonthId = localStorage.getItem("balanco-financeiro:mes-ativo");
+
+  if (months.some((month) => month.id === currentMonthId)) {
+    return currentMonthId;
+  }
+
+  if (months.some((month) => month.id === savedMonthId)) {
+    return savedMonthId;
+  }
+
+  return months.at(-1)?.id ?? "2026-05";
 }
 
-function creationMessage(type, count) {
-  if (count <= 1) {
-    return type === "adjustment" ? "Estorno criado." : "Lancamento criado.";
+function getDefaultActiveView() {
+  try {
+    const savedView = localStorage.getItem("balanco-financeiro:menu-ativo");
+    return navigationItemIds.includes(savedView) ? savedView : defaultActiveView;
+  } catch {
+    return defaultActiveView;
   }
-
-  if (type === "installment") {
-    return `${count} parcelas criadas. Use o seletor de mes acima para acompanhar as proximas parcelas.`;
-  }
-
-  if (type === "fixed") {
-    return `${count} lancamentos fixos criados. Eles foram repetidos nos meses configurados.`;
-  }
-
-  return `${count} lancamentos criados.`;
 }
 
 function Icon({ children }) {
@@ -100,18 +125,20 @@ function EditableMetricCard({ label, value, kind, helper, isEditing, draftValue,
 }
 
 function App() {
-  const [activeView, setActiveView] = useState("lancamentos");
-  const [activeMonthId, setActiveMonthId] = useState(() => {
-    const savedMonthId = localStorage.getItem("balanco-financeiro:mes-ativo");
-    return months.some((month) => month.id === savedMonthId) ? savedMonthId : "2026-05";
-  });
+  const [activeView, setActiveView] = useState(getDefaultActiveView);
+  const [activeMonthId, setActiveMonthId] = useState(getDefaultActiveMonthId);
   const [lastCreatedCount, setLastCreatedCount] = useState(0);
   const [lastCreatedType, setLastCreatedType] = useState("");
   const [editingTransaction, setEditingTransaction] = useState(null);
   const [editingColumnName, setEditingColumnName] = useState(null);
+  const [isAddingColumn, setIsAddingColumn] = useState(false);
+  const [newColumnDraft, setNewColumnDraft] = useState("");
+  const [newAccountType, setNewAccountType] = useState("credit_card");
+  const [newColumnError, setNewColumnError] = useState("");
   const [editingIncome, setEditingIncome] = useState(false);
   const [incomeDraft, setIncomeDraft] = useState("");
   const quickEntryRef = useRef(null);
+  const newColumnInputRef = useRef(null);
   const [formError, setFormError] = useState("");
   const [collapsedColumns, setCollapsedColumns] = useState({});
   const [isMobileLedger, setIsMobileLedger] = useState(() =>
@@ -151,6 +178,13 @@ function App() {
   const [accountColors, setAccountColors] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem("balanco-financeiro:cores-contas")) ?? {};
+    } catch {
+      return {};
+    }
+  });
+  const [accountTypes, setAccountTypes] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem("balanco-financeiro:tipos-contas")) ?? {};
     } catch {
       return {};
     }
@@ -268,13 +302,102 @@ function App() {
 
       return {
         name: column,
+        type: normalizeAccountType(accountTypes[column] ?? defaultAccountType(column)),
         amount: total,
         fixedTotal,
         installmentTotal,
         count: transactions.length
       };
     });
-  }, [accountColumns, transactionsByColumn]);
+  }, [accountColumns, accountTypes, transactionsByColumn]);
+
+  const accountSummariesByType = useMemo(() => {
+    return accountTypeOptions
+      .map((type) => ({
+        ...type,
+        accounts: accountSummaries.filter((account) => account.type === type.value)
+      }))
+      .filter((group) => group.accounts.length > 0);
+  }, [accountSummaries]);
+
+  const dashboardMonthlyData = useMemo(() => {
+    return months.map((month) => {
+      const savedMonthExpenses = savedExpenses
+        .filter((expense) => expense.monthId === month.id)
+        .map((expense, index) => {
+          const dragId = `saved:${expense.id}`;
+          const override = ledgerOverrides[dragId] ?? {};
+          const movedColumn = override.column ?? movedColumns[dragId];
+
+          if (override.deleted) return null;
+
+          return {
+            ...expense,
+            dragId,
+            description: override.description ?? expense.description,
+            amount: override.amount ?? expense.amount,
+            ledgerType: override.type ?? normalizeLedgerType(expense.type),
+            ledgerOrder: override.order ?? index,
+            card: movedColumn ?? expense.card,
+            group: movedColumn ?? expense.group
+          };
+        })
+        .filter(Boolean);
+
+      const importedTransactions = month.transactions
+        .map((transaction, index) => {
+          const dragId = `imported:${month.id}:${index}`;
+          const override = ledgerOverrides[dragId] ?? {};
+          const movedColumn = override.column ?? movedColumns[dragId];
+
+          if (override.deleted) return null;
+
+          return {
+            ...transaction,
+            dragId,
+            description: override.description ?? transaction.description,
+            amount: override.amount ?? transaction.amount,
+            ledgerType: override.type ?? normalizeLedgerType(transaction.type),
+            ledgerOrder: override.order ?? index + 1000,
+            card: movedColumn ?? transaction.card,
+            group: movedColumn ?? transaction.group
+          };
+        })
+        .filter(Boolean);
+
+      const transactions = [...savedMonthExpenses, ...importedTransactions];
+      const income = monthlyIncome[month.id] ?? month.income;
+      const debt = month.debt + transactions.reduce((sum, transaction) => sum + transaction.amount, 0);
+      const balance = income - debt;
+      const usage = income ? Math.min(Math.max(debt / income, 0), 1) : 0;
+
+      return {
+        ...month,
+        shortLabel: month.label.split(" ")[0].slice(0, 3),
+        income,
+        debt,
+        balance,
+        usage,
+        count: transactions.length
+      };
+    });
+  }, [ledgerOverrides, monthlyIncome, movedColumns, savedExpenses]);
+
+  const dashboardYear = activeMonth.id.slice(0, 4);
+  const dashboardYearMonths = dashboardMonthlyData.filter((month) => month.id.startsWith(dashboardYear));
+  const annualIncome = dashboardYearMonths.reduce((sum, month) => sum + month.income, 0);
+  const annualSpent = dashboardYearMonths.reduce((sum, month) => sum + month.debt, 0);
+  const annualBalance = annualIncome - annualSpent;
+  const annualUsage = annualIncome ? Math.min(Math.max(annualSpent / annualIncome, 0), 1) : 0;
+  const maxMonthlyDebt = Math.max(...dashboardYearMonths.map((month) => Math.abs(month.debt)), 1);
+  const highestSpendingMonth = dashboardYearMonths.reduce(
+    (highest, month) => (month.debt > highest.debt ? month : highest),
+    dashboardYearMonths[0] ?? { debt: 0, label: "Sem dados" }
+  );
+  const bestBalanceMonth = dashboardYearMonths.reduce(
+    (best, month) => (month.balance > best.balance ? month : best),
+    dashboardYearMonths[0] ?? { balance: 0, label: "Sem dados" }
+  );
 
   const totalAccounts = useMemo(
     () => accountSummaries.reduce((sum, account) => sum + Math.max(account.amount, 0), 0),
@@ -309,12 +432,20 @@ function App() {
   }, [accountColors]);
 
   useEffect(() => {
+    localStorage.setItem("balanco-financeiro:tipos-contas", JSON.stringify(accountTypes));
+  }, [accountTypes]);
+
+  useEffect(() => {
     localStorage.setItem("balanco-financeiro:rendimentos", JSON.stringify(monthlyIncome));
   }, [monthlyIncome]);
 
   useEffect(() => {
     localStorage.setItem("balanco-financeiro:mes-ativo", activeMonth.id);
   }, [activeMonth.id]);
+
+  useEffect(() => {
+    localStorage.setItem("balanco-financeiro:menu-ativo", activeView);
+  }, [activeView]);
 
   useEffect(() => {
     const mediaQuery = window.matchMedia("(max-width: 720px)");
@@ -325,6 +456,12 @@ function App() {
 
     return () => mediaQuery.removeEventListener?.("change", handleChange);
   }, []);
+
+  useEffect(() => {
+    if (isAddingColumn) {
+      newColumnInputRef.current?.focus();
+    }
+  }, [isAddingColumn]);
 
   const maxCategory = Math.max(...categoryTotals.map((category) => category.value), 1);
   const maxAccount = Math.max(...accountSummaries.map((account) => Math.abs(account.amount)), 1);
@@ -361,7 +498,7 @@ function App() {
     const selectedCard = accountColumns.includes(form.card) ? form.card : accountColumns[0];
 
     if (!selectedCard) {
-      setFormError("Crie uma coluna antes de salvar o gasto.");
+      setFormError("Crie uma conta antes de salvar o gasto.");
       return;
     }
 
@@ -638,6 +775,7 @@ function App() {
     localStorage.removeItem("balanco-financeiro:rendimentos");
     localStorage.removeItem("balanco-financeiro:colunas-contas");
     localStorage.removeItem("balanco-financeiro:cores-contas");
+    localStorage.removeItem("balanco-financeiro:tipos-contas");
     localStorage.removeItem("balanco-financeiro:mes-ativo");
     localStorage.setItem("balanco-financeiro:reset-version", DATA_RESET_VERSION);
 
@@ -647,7 +785,8 @@ function App() {
     setMonthlyIncome({});
     setAccountColumns(spreadsheetColumns);
     setAccountColors({});
-    setActiveMonthId("2026-05");
+    setAccountTypes({});
+    setActiveMonthId(getDefaultActiveMonthId());
     setLastCreatedCount(0);
     setLastCreatedType("");
     setEditingTransaction(null);
@@ -683,7 +822,7 @@ function App() {
     const nextName = rawNextName.trim();
     if (!nextName || nextName === oldName) return;
     if (accountColumns.includes(nextName)) {
-      window.alert("Ja existe uma coluna com esse nome.");
+      window.alert("Ja existe uma conta com esse nome.");
       return;
     }
 
@@ -714,6 +853,11 @@ function App() {
       delete next[oldName];
       return next;
     });
+    setAccountTypes((current) => {
+      const next = { ...current, [nextName]: current[oldName] ?? defaultAccountType(oldName) };
+      delete next[oldName];
+      return next;
+    });
     setForm((current) => ({
       ...current,
       card: current.card === oldName ? nextName : current.card
@@ -733,16 +877,100 @@ function App() {
     setEditingColumnName(null);
   }
 
-  function addAccountColumn() {
-    const newName = window.prompt("Nome da nova categoria/cartao/conta:")?.trim();
+  function startAddingAccountColumn() {
+    setNewColumnDraft("");
+    setNewAccountType("credit_card");
+    setNewColumnError("");
+    setIsAddingColumn(true);
+  }
+
+  function cancelAddingAccountColumn() {
+    setNewColumnDraft("");
+    setNewAccountType("credit_card");
+    setNewColumnError("");
+    setIsAddingColumn(false);
+  }
+
+  function addAccountColumn(rawName = newColumnDraft) {
+    const newName = rawName.trim();
     if (!newName) return;
     if (accountColumns.includes(newName)) {
-      window.alert("Ja existe uma coluna com esse nome.");
+      setNewColumnError("Conta ja existe.");
+      newColumnInputRef.current?.focus();
       return;
     }
 
     setAccountColumns((current) => [...current, newName]);
+    setAccountTypes((current) => ({ ...current, [newName]: newAccountType }));
     setForm((current) => ({ ...current, card: newName }));
+    cancelAddingAccountColumn();
+  }
+
+  function commitNewAccountColumn() {
+    const newName = newColumnDraft.trim();
+    if (!newName) {
+      cancelAddingAccountColumn();
+      return;
+    }
+
+    addAccountColumn(newName);
+  }
+
+  function handleNewColumnKeyDown(event) {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      commitNewAccountColumn();
+    }
+
+    if (event.key === "Escape") {
+      event.preventDefault();
+      cancelAddingAccountColumn();
+    }
+  }
+
+  function handleNewColumnControlBlur(event) {
+    if (event.currentTarget.contains(event.relatedTarget)) {
+      return;
+    }
+
+    commitNewAccountColumn();
+  }
+
+  function renderNewColumnControl() {
+    if (isAddingColumn) {
+      return (
+        <span className="new-column-control" onBlur={handleNewColumnControlBlur}>
+          <input
+            ref={newColumnInputRef}
+            className="new-column-input"
+            aria-label="Nome da nova conta"
+            value={newColumnDraft}
+            onChange={(event) => {
+              setNewColumnDraft(event.target.value);
+              if (newColumnError) setNewColumnError("");
+            }}
+            onKeyDown={handleNewColumnKeyDown}
+          />
+          <select
+            className="new-account-type-select"
+            aria-label="Tipo da nova conta"
+            value={newAccountType}
+            onChange={(event) => setNewAccountType(event.target.value)}
+          >
+            {accountTypeOptions.map((option) => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
+          </select>
+          {newColumnError && <small className="new-column-error">{newColumnError}</small>}
+        </span>
+      );
+    }
+
+    return (
+      <button className="ghost-button" type="button" onClick={startAddingAccountColumn}>
+        Nova conta
+      </button>
+    );
   }
 
   function updateAccountColor(columnName, color) {
@@ -754,14 +982,14 @@ function App() {
 
   function deleteAccountColumn(columnName) {
     if (accountColumns.length <= 1) {
-      window.alert("Mantenha pelo menos uma coluna.");
+      window.alert("Mantenha pelo menos uma conta.");
       return;
     }
 
     const hasTransactions = (transactionsByColumn[columnName] ?? []).length > 0;
     const message = hasTransactions
-      ? `Excluir a coluna "${columnName}" e todos os lançamentos nela?`
-      : `Excluir a coluna "${columnName}"?`;
+      ? `Excluir a conta "${columnName}" e todos os lançamentos nela?`
+      : `Excluir a conta "${columnName}"?`;
     const confirmed = window.confirm(message);
     if (!confirmed) return;
 
@@ -799,6 +1027,11 @@ function App() {
       return next;
     });
     setAccountColors((current) => {
+      const next = { ...current };
+      delete next[columnName];
+      return next;
+    });
+    setAccountTypes((current) => {
       const next = { ...current };
       delete next[columnName];
       return next;
@@ -897,7 +1130,182 @@ function App() {
               onSave={saveMonthlyIncome}
             />
             <MetricCard label="Gastos do mes" value={adjustedDebt} kind="debt" helper={`${allTransactions.length} lancamentos no mes`} />
-            <MetricCard label="Saldo" value={adjustedBalance} kind={adjustedBalance >= 0 ? "income" : "danger"} helper={`${filledAccounts}/${accountColumns.length} colunas com lancamentos`} />
+            <MetricCard label="Saldo" value={adjustedBalance} kind={adjustedBalance >= 0 ? "income" : "danger"} helper={`${filledAccounts}/${accountColumns.length} contas com lancamentos`} />
+          </section>
+        )}
+
+        {activeView === "dashboard" && (
+          <section className="dashboard-view" aria-label="Dashboard financeiro">
+            <article className="panel annual-panel">
+              <div className="panel-heading">
+                <div>
+                  <span className="eyebrow">Ano {dashboardYear}</span>
+                  <h2>Visao anual</h2>
+                </div>
+                <span className={`annual-status ${annualBalance >= 0 ? "positive" : "risk"}`}>
+                  {annualBalance >= 0 ? "Saldo positivo" : "Saldo negativo"}
+                </span>
+              </div>
+
+              <div className="annual-hero">
+                <div>
+                  <span>Total gasto</span>
+                  <strong>{formatMoney(annualSpent)}</strong>
+                </div>
+                <div>
+                  <span>Rendimentos</span>
+                  <strong>{formatMoney(annualIncome)}</strong>
+                </div>
+                <div>
+                  <span>Saldo anual</span>
+                  <strong className={annualBalance < 0 ? "risk-text" : ""}>{formatMoney(annualBalance)}</strong>
+                </div>
+              </div>
+
+              <div className="annual-ring-row">
+                <div className="annual-ring" style={{ "--usage": `${annualUsage * 360}deg` }}>
+                  <span>{Math.round(annualUsage * 100)}%</span>
+                </div>
+                <div className="annual-insights">
+                  <div>
+                    <span>Maior gasto</span>
+                    <strong>{highestSpendingMonth.label}</strong>
+                    <small>{formatMoney(highestSpendingMonth.debt)}</small>
+                  </div>
+                  <div>
+                    <span>Melhor saldo</span>
+                    <strong>{bestBalanceMonth.label}</strong>
+                    <small>{formatMoney(bestBalanceMonth.balance)}</small>
+                  </div>
+                </div>
+              </div>
+            </article>
+
+            <article className="panel monthly-chart-panel">
+              <div className="panel-heading">
+                <div>
+                  <span className="eyebrow">Mes a mes</span>
+                  <h2>Gastos por mes</h2>
+                </div>
+              </div>
+
+              <div className="monthly-bars" aria-label="Grafico de gastos mensais">
+                {dashboardYearMonths.map((month) => {
+                  const height = Math.max((Math.abs(month.debt) / maxMonthlyDebt) * 100, month.debt ? 8 : 10);
+                  const isActiveMonth = month.id === activeMonth.id;
+                  return (
+                    <button
+                      className={`monthly-bar-item ${isActiveMonth ? "active" : ""} ${month.debt === 0 ? "empty" : ""}`}
+                      key={month.id}
+                      type="button"
+                      onClick={() => setActiveMonthId(month.id)}
+                    >
+                      <span className="monthly-bar-value">
+                        {month.debt !== 0 ? formatMoney(month.debt) : ""}
+                      </span>
+                      <div className="monthly-bar-track">
+                        <span
+                          className={month.balance < 0 ? "risk" : ""}
+                          style={{ "--bar-height": `${height}%` }}
+                        />
+                      </div>
+                      <strong>{month.shortLabel}</strong>
+                      <small className="monthly-current-pill" aria-hidden={!isActiveMonth}>
+                        Atual
+                      </small>
+                    </button>
+                  );
+                })}
+              </div>
+            </article>
+
+            <article className="panel monthly-flow-panel">
+              <div className="panel-heading">
+                <div>
+                  <span className="eyebrow">Fluxo mensal</span>
+                  <h2>Resumo financeiro por mes</h2>
+                </div>
+              </div>
+
+              <div className="monthly-flow-list">
+                <div className="monthly-flow-header" aria-hidden="true">
+                  <span>Mes</span>
+                  <span>Gastos</span>
+                  <span>Rendimentos</span>
+                  <span>Saldo</span>
+                  <span>Uso da renda</span>
+                </div>
+                {dashboardYearMonths.map((month) => {
+                  const incomeUsage = month.income ? Math.min(Math.max((month.debt / month.income) * 100, 0), 100) : 0;
+                  const usageLabel = month.income ? `${Math.round(incomeUsage)}%` : "Sem renda";
+                  const statusLabel = month.income
+                    ? month.balance >= 0
+                      ? "Dentro do mes"
+                      : "Acima da renda"
+                    : "Informe renda";
+                  const isActiveMonth = month.id === activeMonth.id;
+
+                  return (
+                    <button
+                      className={`monthly-flow-row ${isActiveMonth ? "active" : ""}`}
+                      key={month.id}
+                      type="button"
+                      onClick={() => setActiveMonthId(month.id)}
+                    >
+                      <div className="flow-month-cell">
+                        <strong>{month.label}</strong>
+                        <span>{month.count} lancamentos</span>
+                      </div>
+                      <span className="flow-money-cell">
+                        <small>Gastos</small>
+                        <strong>{formatMoney(month.debt)}</strong>
+                      </span>
+                      <span className="flow-money-cell">
+                        <small>Rendimentos</small>
+                        <strong>{formatMoney(month.income)}</strong>
+                      </span>
+                      <span className="flow-money-cell">
+                        <small>Saldo</small>
+                        <strong className={month.balance < 0 ? "risk-text" : "positive-text"}>{formatMoney(month.balance)}</strong>
+                      </span>
+                      <div className="flow-usage-cell">
+                        <div className="flow-usage-copy">
+                          <span>{usageLabel}</span>
+                          <small className={month.balance < 0 ? "risk-text" : ""}>{statusLabel}</small>
+                        </div>
+                        <div className="flow-usage-track">
+                          <span
+                            className={month.balance < 0 ? "risk" : ""}
+                            style={{ width: `${month.income ? Math.max(incomeUsage, month.debt ? 4 : 0) : 0}%` }}
+                          />
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </article>
+
+            <article className="panel dashboard-categories-panel">
+              <div className="panel-heading">
+                <div>
+                  <span className="eyebrow">Categorias</span>
+                  <h2>Distribuicao do mes</h2>
+                </div>
+              </div>
+              <div className="category-list">
+                {categoryTotals.slice(0, 5).map((category) => (
+                  <div className="category-row" key={category.name}>
+                    <span className={`dot ${category.tone}`} />
+                    <strong>{category.name}</strong>
+                    <div className="category-track">
+                      <span className={category.tone} style={{ width: `${(category.value / maxCategory) * 100}%` }} />
+                    </div>
+                    <span>{formatMoney(category.value)}</span>
+                  </div>
+                ))}
+              </div>
+            </article>
           </section>
         )}
 
@@ -935,7 +1343,7 @@ function App() {
                     />
                   </label>
                   <label>
-                    Cartao ou conta
+                    Conta
                     <select value={form.card} onChange={(event) => updateForm("card", event.target.value)}>
                       {accountColumns.map((column) => (
                         <option key={column}>{column}</option>
@@ -1008,14 +1416,14 @@ function App() {
             <div className="panel-heading">
               <div>
                 <span className="eyebrow">Planilha do mes</span>
-                <h2>Lancamentos por cartao ou conta</h2>
+                <h2>Lancamentos por conta</h2>
               </div>
               <div className="panel-actions">
-                <button className="ghost-button" type="button" onClick={addAccountColumn}>Nova coluna</button>
+                {renderNewColumnControl()}
                 <span className="ledger-count">{allTransactions.length} itens</span>
               </div>
             </div>
-            <div className="ledger-board" aria-label="Lancamentos agrupados por coluna">
+              <div className="ledger-board" aria-label="Lancamentos agrupados por conta">
               {accountColumns.map((column) => {
                 const transactions = transactionsByColumn[column];
                 const total = transactions.reduce((sum, transaction) => sum + transaction.amount, 0);
@@ -1060,8 +1468,8 @@ function App() {
                         <button
                           className="delete-column-button"
                           type="button"
-                          title="Excluir coluna"
-                          aria-label={`Excluir coluna ${column}`}
+                          title="Excluir conta"
+                          aria-label={`Excluir conta ${column}`}
                           onClick={(event) => {
                             event.stopPropagation();
                             deleteAccountColumn(column);
@@ -1169,29 +1577,49 @@ function App() {
             <article className="panel account-panel">
               <div className="panel-heading">
                 <div>
-                  <span className="eyebrow">Cartoes e contas</span>
+                  <span className="eyebrow">Contas</span>
                   <h2>{formatMoney(totalAccounts)}</h2>
                 </div>
-                <button className="ghost-button" type="button" onClick={addAccountColumn}>Nova coluna</button>
+                {renderNewColumnControl()}
               </div>
 
-              <div className="account-list">
-                {accountSummaries.map((account) => {
-                  const width = maxAccount ? Math.max((Math.abs(account.amount) / maxAccount) * 100, 8) : 0;
+              <div className="account-list account-groups">
+                {accountSummariesByType.map((group) => {
+                  const groupTotal = group.accounts.reduce((sum, account) => sum + account.amount, 0);
+                  const groupTransactions = group.accounts.reduce((sum, account) => sum + account.count, 0);
+
                   return (
-                    <div className="account-row account-manager-row" key={account.name}>
+                  <section className={`account-type-group account-type-${group.value}`} key={group.value}>
+                    <div className="account-type-heading">
                       <div>
-                        <strong>{account.name}</strong>
-                        <span>{account.count} lancamentos • fixos {formatMoney(account.fixedTotal)} • parcelas {formatMoney(account.installmentTotal)}</span>
+                        <span className="account-type-kicker">{group.accounts.length} contas • {groupTransactions} lancamentos</span>
+                        <strong>{group.label}</strong>
                       </div>
-                      <div className="bar-track">
-                        <span style={{ width: `${width}%` }} />
+                      <div className="account-type-total">
+                        <span>Total</span>
+                        <strong>{formatMoney(groupTotal)}</strong>
                       </div>
-                      <strong className={account.amount < 0 ? "positive" : ""}>{formatMoney(account.amount)}</strong>
-                      <button className="ghost-button" type="button" onClick={() => deleteAccountColumn(account.name)}>
-                        Excluir
-                      </button>
                     </div>
+                    {group.accounts.map((account) => {
+                      const width = maxAccount ? Math.max((Math.abs(account.amount) / maxAccount) * 100, 8) : 0;
+                      return (
+                        <div className="account-row account-manager-row" key={account.name}>
+                          <div>
+                            <strong>{account.name}</strong>
+                            <span>{account.count} lancamentos • fixos {formatMoney(account.fixedTotal)} • parcelas {formatMoney(account.installmentTotal)}</span>
+                          </div>
+                          <span className="account-type-pill">{accountTypeLabel(account.type)}</span>
+                          <div className="bar-track">
+                            <span style={{ width: `${width}%` }} />
+                          </div>
+                          <strong className={account.amount < 0 ? "positive" : ""}>{formatMoney(account.amount)}</strong>
+                          <button className="ghost-button" type="button" onClick={() => deleteAccountColumn(account.name)}>
+                            Excluir
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </section>
                   );
                 })}
               </div>
@@ -1199,7 +1627,7 @@ function App() {
           </section>
         )}
 
-        {(activeView === "dashboard" || activeView === "relatorios") && (
+        {activeView === "relatorios" && (
         <section className="secondary-grid">
           <article className="panel">
             <div className="panel-heading">
@@ -1287,7 +1715,7 @@ function App() {
               <input value={editingTransaction.description} onChange={(event) => updateEditingForm("description", event.target.value)} />
             </label>
             <label>
-              Cartao ou conta
+              Conta
               <select value={editingTransaction.card} onChange={(event) => updateEditingForm("card", event.target.value)}>
                 {accountColumns.map((column) => (
                   <option key={column}>{column}</option>
@@ -1332,357 +1760,5 @@ const ledgerSections = [
   { key: "installment", label: "Parcelados" },
   { key: "single", label: "Avulsos / ajustes" }
 ];
-
-function groupTransactionsByType(transactions) {
-  const groups = transactions.reduce(
-    (groups, transaction) => {
-      if (transaction.ledgerType === "fixed") {
-        groups.fixed.push(transaction);
-      } else if (transaction.ledgerType === "installment") {
-        groups.installment.push(transaction);
-      } else {
-        groups.single.push(transaction);
-      }
-
-      return groups;
-    },
-    { fixed: [], installment: [], single: [] }
-  );
-
-  Object.values(groups).forEach((group) => {
-    group.sort((a, b) => a.ledgerOrder - b.ledgerOrder);
-  });
-
-  return groups;
-}
-
-function normalizeLedgerType(type) {
-  if (type === "adjustment") return "adjustment";
-  if (type === "fixed" || type === "installment") return type;
-  return "single";
-}
-
-function formatLedgerItemAmount(transaction) {
-  const amount = Math.abs(transaction.amount);
-  const signal = transaction.ledgerType === "adjustment" ? "+" : "-";
-
-  return `${signal} ${formatMoney(amount)}`;
-}
-
-function installmentHint(transaction) {
-  const installmentInfo = getInstallmentInfo(transaction);
-
-  if (!installmentInfo) return "Compra parcelada";
-
-  const nextMonth = months.find((month) => month.id === installmentInfo.nextMonthId);
-  const nextText = nextMonth ? ` • Proxima: ${nextMonth.label}` : " • Ultima parcela";
-
-  return `Parcela ${installmentInfo.current}/${installmentInfo.total}${nextText}`;
-}
-
-function getInstallmentInfo(transaction) {
-  if (transaction.installmentNumber && transaction.installments) {
-    return {
-      current: transaction.installmentNumber,
-      total: transaction.installments,
-      nextMonthId: nextMonthId(transaction.monthId)
-    };
-  }
-
-  const match = transaction.description.match(/(\d+)\s*\/\s*(\d+)/);
-  if (!match) return null;
-
-  const current = Number.parseInt(match[1], 10);
-  const total = Number.parseInt(match[2], 10);
-
-  return {
-    current,
-    total,
-    nextMonthId: current < total ? nextMonthId(transaction.monthId) : null
-  };
-}
-
-function nextMonthId(monthId) {
-  const currentIndex = months.findIndex((month) => month.id === monthId);
-  return months[currentIndex + 1]?.id ?? null;
-}
-
-function normalizeColumn(group, columns = spreadsheetColumns) {
-  const text = String(group).toLowerCase();
-  const fallbackIndex = text.includes("mercado pago")
-    ? 0
-    : text.includes("smiles")
-      ? 1
-      : text.includes("nubank")
-        ? 2
-        : text.includes("banco")
-          ? 3
-          : text.includes("casa")
-            ? 5
-            : 4;
-
-  return columns[fallbackIndex] ?? columns[0] ?? spreadsheetColumns[0];
-}
-
-function renameMapValues(map, oldName, nextName) {
-  return Object.fromEntries(
-    Object.entries(map).map(([key, value]) => [key, value === oldName ? nextName : value])
-  );
-}
-
-function buildExpensesFromForm({ form, activeMonth, amount }) {
-  const startIndex = months.findIndex((month) => month.id === activeMonth.id);
-  const base = {
-    amount,
-    group: form.card,
-    card: form.card,
-    createdAt: new Date().toISOString()
-  };
-
-  if (form.type === "installment") {
-    const installments = clampInteger(form.installments, 2, 48);
-    const startInstallment = clampInteger(form.startInstallment, 1, installments);
-    const monthsToCreate = installments - startInstallment + 1;
-    const seriesId = createId();
-
-    return months
-      .slice(startIndex, startIndex + monthsToCreate)
-      .map((month, index) => ({
-        ...base,
-        id: createId(),
-        monthId: month.id,
-        type: "installment",
-        seriesId,
-        installmentNumber: startInstallment + index,
-        installments,
-        description: `${form.description.trim()} ${startInstallment + index}/${installments}`
-      }));
-  }
-
-  if (form.type === "fixed") {
-    const repeatMonths = String(form.repeatMonths).trim()
-      ? clampInteger(form.repeatMonths, 1, 60)
-      : months.length - startIndex;
-    const seriesId = createId();
-
-    return months
-      .slice(startIndex, startIndex + repeatMonths)
-      .map((month) => ({
-        ...base,
-        id: createId(),
-        monthId: month.id,
-        type: "fixed",
-        seriesId,
-        description: form.description.trim()
-      }));
-  }
-
-  return [{
-    ...base,
-    id: createId(),
-    monthId: activeMonth.id,
-    type: form.type,
-    description: form.description.trim()
-  }];
-}
-
-function normalizeAmountForType(type, amount) {
-  if (type === "adjustment") {
-    return -Math.abs(amount);
-  }
-
-  return amount;
-}
-
-function createId() {
-  if (globalThis.crypto?.randomUUID) {
-    return globalThis.crypto.randomUUID();
-  }
-
-  const randomPart = Math.random().toString(36).slice(2, 10);
-  return `${Date.now().toString(36)}-${randomPart}`;
-}
-
-function parseCurrencyInput(value) {
-  const raw = String(value).trim().replace(/[^\d,.-]/g, "");
-
-  if (!raw) {
-    return Number.NaN;
-  }
-
-  const lastComma = raw.lastIndexOf(",");
-  const lastDot = raw.lastIndexOf(".");
-  let normalized = raw;
-
-  if (lastComma > -1 && lastDot > -1) {
-    normalized = lastComma > lastDot
-      ? raw.replace(/\./g, "").replace(",", ".")
-      : raw.replace(/,/g, "");
-  } else if (lastComma > -1) {
-    normalized = raw.replace(/\./g, "").replace(",", ".");
-  }
-
-  const parsed = Number.parseFloat(normalized);
-  return Number.isFinite(parsed) ? parsed : Number.NaN;
-}
-
-function persistExpenses(expenses, onError) {
-  try {
-    localStorage.setItem("balanco-financeiro:gastos", JSON.stringify(expenses));
-    return true;
-  } catch {
-    onError?.("O Chrome bloqueou o armazenamento neste navegador. Verifique se o site esta em modo anonimo ou com armazenamento desativado.");
-    return false;
-  }
-}
-
-function canUseExpenseStorage(onError) {
-  const testKey = "balanco-financeiro:teste-storage";
-
-  try {
-    localStorage.setItem(testKey, "ok");
-    localStorage.removeItem(testKey);
-    return true;
-  } catch {
-    onError?.("O Chrome bloqueou o armazenamento neste navegador. Verifique se o site esta em modo anonimo ou com armazenamento desativado.");
-    return false;
-  }
-}
-
-function completeMissingInstallments(expenses) {
-  const completed = [...expenses];
-
-  expenses.forEach((expense) => {
-    if (expense.type !== "installment") return;
-
-    const info = parseInstallmentDescription(expense.description);
-    if (!info || info.current >= info.total) return;
-
-    const startIndex = months.findIndex((month) => month.id === expense.monthId);
-    if (startIndex < 0) return;
-    const seriesId = expense.seriesId ?? createId();
-
-    for (let nextNumber = info.current + 1; nextNumber <= info.total; nextNumber += 1) {
-      const targetMonth = months[startIndex + (nextNumber - info.current)];
-      if (!targetMonth) break;
-
-      const nextDescription = `${info.base} ${nextNumber}/${info.total}`;
-      const alreadyExists = completed.some((item) =>
-        item.monthId === targetMonth.id &&
-        item.type === "installment" &&
-        item.card === expense.card &&
-        item.amount === expense.amount &&
-        item.description === nextDescription
-      );
-
-      if (!alreadyExists) {
-        completed.push({
-          ...expense,
-          id: createId(),
-          monthId: targetMonth.id,
-          description: nextDescription,
-          installmentNumber: nextNumber,
-          installments: info.total,
-          seriesId,
-          createdAt: new Date().toISOString()
-        });
-      }
-    }
-  });
-
-  return completed;
-}
-
-function parseInstallmentDescription(description) {
-  const match = description.match(/^(.*?)\s+(\d+)\s*\/\s*(\d+)$/);
-  if (!match) return null;
-
-  return {
-    base: match[1].trim(),
-    current: Number.parseInt(match[2], 10),
-    total: Number.parseInt(match[3], 10)
-  };
-}
-
-function clampInteger(value, min, max) {
-  const number = Number.parseInt(value, 10);
-  if (Number.isNaN(number)) return min;
-  return Math.min(Math.max(number, min), max);
-}
-
-function columnClass(column, columns = spreadsheetColumns) {
-  const classes = ["col-mercado", "col-smiles", "col-nubank", "col-bb", "col-outros", "col-casa"];
-  const index = columns.indexOf(column);
-
-  return classes[index] ?? "";
-}
-
-function defaultColumnColor(column, columns = spreadsheetColumns) {
-  const colors = ["#dff2f8", "#eeeeed", "#eee8f7", "#fbf7d9", "#eeeeee", "#e8f2f8"];
-  const index = columns.indexOf(column);
-
-  return colors[index] ?? "#eef2ee";
-}
-
-function columnHeaderStyle(color, isActive = false) {
-  if (!color) return undefined;
-
-  const topColor = isActive ? shadeHexColor(color, 18) : shadeHexColor(color, 32);
-  const bottomColor = isActive ? shadeHexColor(color, -12) : color;
-
-  return {
-    background: `linear-gradient(145deg, ${topColor} 0%, ${bottomColor} 100%)`,
-    color: readableTextColor(bottomColor)
-  };
-}
-
-function shadeHexColor(hex, percent) {
-  const normalized = hex.replace("#", "");
-  const value = Number.parseInt(normalized, 16);
-  const amount = Math.round(2.55 * percent);
-  const red = clampColor((value >> 16) + amount);
-  const green = clampColor(((value >> 8) & 0xff) + amount);
-  const blue = clampColor((value & 0xff) + amount);
-
-  return `#${((1 << 24) + (red << 16) + (green << 8) + blue).toString(16).slice(1)}`;
-}
-
-function clampColor(value) {
-  return Math.max(0, Math.min(255, value));
-}
-
-function readableTextColor(hex) {
-  const normalized = hex.replace("#", "");
-  const value = Number.parseInt(normalized, 16);
-  const red = value >> 16;
-  const green = (value >> 8) & 0xff;
-  const blue = value & 0xff;
-  const brightness = (red * 299 + green * 587 + blue * 114) / 1000;
-
-  return brightness > 150 ? "#1f2623" : "#ffffff";
-}
-
-function normalizeCategory(group) {
-  const text = String(group).toLowerCase();
-  if (text.includes("casa")) return "Casa";
-  if (text.includes("transporte") || text.includes("gasolina") || text.includes("uber")) return "Transporte";
-  if (text.includes("lazer")) return "Lazer";
-  if (text.includes("outro")) return "Outros";
-  if (text.includes("banco")) return "Banco";
-  return "Cartoes";
-}
-
-function categoryTone(name) {
-  const tones = {
-    Cartoes: "teal",
-    Casa: "amber",
-    Outros: "coral",
-    Banco: "ink",
-    Transporte: "coral",
-    Lazer: "amber"
-  };
-
-  return tones[name] ?? "teal";
-}
 
 export default App;
