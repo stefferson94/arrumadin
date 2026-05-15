@@ -367,6 +367,59 @@ function App() {
     });
   }, [ledgerOverrides, monthlyIncome, movedColumns, savedExpenses, yearMonths]);
 
+  const reportYearTransactions = useMemo(() => {
+    return yearMonths.flatMap((month) => {
+      const savedMonthExpenses = savedExpenses
+        .filter((expense) => expense.monthId === month.id)
+        .map((expense, index) => {
+          const dragId = `saved:${expense.id}`;
+          const override = ledgerOverrides[dragId] ?? {};
+          const movedColumn = override.column ?? movedColumns[dragId];
+
+          if (override.deleted) return null;
+
+          return {
+            ...expense,
+            monthId: month.id,
+            monthLabel: month.label,
+            dragId,
+            description: override.description ?? expense.description,
+            amount: override.amount ?? expense.amount,
+            ledgerType: override.type ?? normalizeLedgerType(expense.type),
+            ledgerOrder: override.order ?? index,
+            card: movedColumn ?? expense.card,
+            group: movedColumn ?? expense.group
+          };
+        })
+        .filter(Boolean);
+
+      const importedTransactions = month.transactions
+        .map((transaction, index) => {
+          const dragId = `imported:${month.id}:${index}`;
+          const override = ledgerOverrides[dragId] ?? {};
+          const movedColumn = override.column ?? movedColumns[dragId];
+
+          if (override.deleted) return null;
+
+          return {
+            ...transaction,
+            monthId: month.id,
+            monthLabel: month.label,
+            dragId,
+            description: override.description ?? transaction.description,
+            amount: override.amount ?? transaction.amount,
+            ledgerType: override.type ?? normalizeLedgerType(transaction.type),
+            ledgerOrder: override.order ?? index + 1000,
+            card: movedColumn ?? transaction.card,
+            group: movedColumn ?? transaction.group
+          };
+        })
+        .filter(Boolean);
+
+      return [...savedMonthExpenses, ...importedTransactions];
+    });
+  }, [ledgerOverrides, movedColumns, savedExpenses, yearMonths]);
+
   const dashboardYear = activeYear;
   const dashboardYearMonths = dashboardMonthlyData;
   const annualIncome = dashboardYearMonths.reduce((sum, month) => sum + month.income, 0);
@@ -382,6 +435,80 @@ function App() {
     (best, month) => (month.balance > best.balance ? month : best),
     dashboardYearMonths[0] ?? { balance: 0, label: "Sem dados" }
   );
+
+  const activeMonthIndex = dashboardYearMonths.findIndex((month) => month.id === activeMonth.id);
+  const previousMonthReport = activeMonthIndex > 0 ? dashboardYearMonths[activeMonthIndex - 1] : null;
+  const monthlyDelta = previousMonthReport ? adjustedDebt - previousMonthReport.debt : 0;
+  const monthlyDeltaPercent = previousMonthReport?.debt
+    ? Math.round((monthlyDelta / previousMonthReport.debt) * 100)
+    : 0;
+  const averageMonthlySpent = annualSpent / 12;
+  const averageDailySpent = adjustedDebt / Math.max(new Date(activeYear, activeMonthNumber, 0).getDate(), 1);
+  const annualTransactionCount = reportYearTransactions.length;
+
+  const reportCategoryTotals = useMemo(() => {
+    const totals = reportYearTransactions.reduce((map, transaction) => {
+      const name = normalizeCategory(transaction.group);
+      map.set(name, (map.get(name) ?? 0) + Math.max(transaction.amount, 0));
+      return map;
+    }, new Map());
+
+    return Array.from(totals, ([name, value]) => ({
+      name,
+      value,
+      tone: categoryTone(name)
+    })).sort((a, b) => b.value - a.value);
+  }, [reportYearTransactions]);
+
+  const reportAccountTotals = useMemo(() => {
+    const totals = accountColumns.map((column) => {
+      const transactions = reportYearTransactions.filter((transaction) => {
+        const accountName = accountColumns.includes(transaction.card)
+          ? transaction.card
+          : accountColumns.includes(transaction.group)
+            ? transaction.group
+            : normalizeColumn(transaction.group, accountColumns);
+
+        return accountName === column;
+      });
+
+      return {
+        name: column,
+        type: normalizeAccountType(accountTypes[column] ?? defaultAccountType(column)),
+        amount: transactions.reduce((sum, transaction) => sum + Math.max(transaction.amount, 0), 0),
+        count: transactions.length
+      };
+    });
+
+    return totals.filter((account) => account.count > 0 || account.amount > 0).sort((a, b) => b.amount - a.amount);
+  }, [accountColumns, accountTypes, reportYearTransactions]);
+
+  const reportTypeTotals = useMemo(() => {
+    const labels = {
+      single: "Avulsos",
+      installment: "Parcelados",
+      fixed: "Fixos",
+      adjustment: "Estornos"
+    };
+    const totals = reportYearTransactions.reduce((map, transaction) => {
+      const type = normalizeLedgerType(transaction.ledgerType ?? transaction.type);
+      map.set(type, (map.get(type) ?? 0) + Math.max(transaction.amount, 0));
+      return map;
+    }, new Map());
+
+    return Object.entries(labels).map(([type, label]) => ({
+      type,
+      label,
+      value: totals.get(type) ?? 0
+    }));
+  }, [reportYearTransactions]);
+
+  const maxReportCategory = Math.max(...reportCategoryTotals.map((category) => category.value), 1);
+  const maxReportAccount = Math.max(...reportAccountTotals.map((account) => account.amount), 1);
+  const maxReportType = Math.max(...reportTypeTotals.map((type) => type.value), 1);
+  const biggestCategory = reportCategoryTotals[0] ?? { name: "Sem categoria", value: 0 };
+  const biggestAccount = reportAccountTotals[0] ?? { name: "Sem conta", amount: 0 };
+  const spendingProjection = averageDailySpent * Math.max(new Date(activeYear, activeMonthNumber, 0).getDate(), 1);
 
   const totalAccounts = useMemo(
     () => accountSummaries.reduce((sum, account) => sum + Math.max(account.amount, 0), 0),
@@ -1766,63 +1893,192 @@ function App() {
         )}
 
         {activeView === "relatorios" && (
-        <section className="secondary-grid">
-          <article className="panel">
-            <div className="panel-heading">
+          <section className="reports-view" aria-label="Relatorios financeiros">
+            <article className="panel reports-hero">
               <div>
-                <span className="eyebrow">Categorias</span>
-                <h2>Distribuicao</h2>
+                <span className="eyebrow">Relatorios {dashboardYear}</span>
+                <h2>Seu dinheiro em leitura clara</h2>
+                <p>
+                  Acompanhe onde o dinheiro esta indo, quais contas pesam mais e como o ano esta evoluindo.
+                </p>
               </div>
-            </div>
-            <div className="category-list">
-              {categoryTotals.slice(0, 5).map((category) => (
-                <div className="category-row" key={category.name}>
-                  <span className={`dot ${category.tone}`} />
-                  <strong>{category.name}</strong>
-                  <div className="category-track">
-                    <span className={category.tone} style={{ width: `${(category.value / maxCategory) * 100}%` }} />
-                  </div>
-                  <span>{formatMoney(category.value)}</span>
-                </div>
-              ))}
-            </div>
-          </article>
+              <div className="reports-hero-score">
+                <span>Uso da renda anual</span>
+                <strong>{Math.round(annualUsage * 100)}%</strong>
+                <small>{annualBalance >= 0 ? "Ano dentro do controle" : "Gastos acima da renda"}</small>
+              </div>
+            </article>
 
-          <article className="panel transactions-panel">
-            <div className="panel-heading">
-              <div>
-                <span className="eyebrow">Lancamentos</span>
-                <h2>Transacoes recentes</h2>
-              </div>
-            </div>
-            <div className="transaction-list">
-              {allTransactions.slice(0, 8).map((transaction) => (
-                <div className="transaction-row" key={transaction.id ?? `${transaction.group}-${transaction.description}`}>
-                  <div className="transaction-icon">{transaction.description.slice(0, 1)}</div>
+            <section className="reports-kpi-grid" aria-label="Indicadores principais">
+              <article className="report-kpi">
+                <span>Total gasto no ano</span>
+                <strong>{formatMoney(annualSpent)}</strong>
+                <small>{annualTransactionCount} lancamentos analisados</small>
+              </article>
+              <article className="report-kpi">
+                <span>Media mensal</span>
+                <strong>{formatMoney(averageMonthlySpent)}</strong>
+                <small>Baseada nos 12 meses do ano</small>
+              </article>
+              <article className="report-kpi">
+                <span>Media diaria do mes</span>
+                <strong>{formatMoney(averageDailySpent)}</strong>
+                <small>{activeMonthName} {activeYear}</small>
+              </article>
+              <article className="report-kpi">
+                <span>Maior categoria</span>
+                <strong>{biggestCategory.name}</strong>
+                <small>{formatMoney(biggestCategory.value)}</small>
+              </article>
+            </section>
+
+            <section className="reports-main-grid">
+              <article className="panel report-chart-panel">
+                <div className="panel-heading">
                   <div>
-                    <strong>{transaction.description}</strong>
-                    <span>
-                      {transaction.card ?? transaction.group}
-                      {transaction.id ? " • cadastrado agora" : ""}
-                    </span>
+                    <span className="eyebrow">Evolucao</span>
+                    <h2>Gastos, renda e saldo por mes</h2>
                   </div>
-                  <strong>{formatMoney(transaction.amount)}</strong>
-                  {transaction.id && (
-                    <button className="icon-button" type="button" onClick={() => removeExpense(transaction.id)} aria-label="Remover gasto">
-                      ×
-                    </button>
-                  )}
                 </div>
-              ))}
-            </div>
-          </article>
-        </section>
+                <div className="report-month-list">
+                  {dashboardYearMonths.map((month) => {
+                    const spentWidth = (Math.abs(month.debt) / maxMonthlyDebt) * 100;
+                    const incomeWidth = annualIncome ? Math.min((month.income / Math.max(...dashboardYearMonths.map((item) => item.income), 1)) * 100, 100) : 0;
+                    const isActiveMonth = month.id === activeMonth.id;
+
+                    return (
+                      <button
+                        className={`report-month-row ${isActiveMonth ? "active" : ""}`}
+                        key={month.id}
+                        type="button"
+                        onClick={() => setActiveMonthId(month.id)}
+                      >
+                        <strong>{month.shortLabel}</strong>
+                        <div className="report-month-bars">
+                          <span className="spent" style={{ width: `${Math.max(spentWidth, month.debt ? 4 : 0)}%` }} />
+                          <span className="income" style={{ width: `${Math.max(incomeWidth, month.income ? 4 : 0)}%` }} />
+                        </div>
+                        <span>{formatMoney(month.debt)}</span>
+                        <small className={month.balance < 0 ? "risk-text" : "positive-text"}>
+                          {formatMoney(month.balance)}
+                        </small>
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="report-legend">
+                  <span><i className="spent" /> Gastos</span>
+                  <span><i className="income" /> Rendimentos</span>
+                </div>
+              </article>
+
+              <article className="panel report-insights-panel">
+                <div className="panel-heading">
+                  <div>
+                    <span className="eyebrow">Insights</span>
+                    <h2>O que observar agora</h2>
+                  </div>
+                </div>
+                <div className="report-insight-list">
+                  <div className="report-insight-card">
+                    <span>{monthlyDelta > 0 ? "Aumento no mes" : "Comparacao mensal"}</span>
+                    <strong>
+                      {previousMonthReport
+                        ? `${monthlyDelta > 0 ? "+" : ""}${formatMoney(monthlyDelta)}`
+                        : "Sem mes anterior"}
+                    </strong>
+                    <small>
+                      {previousMonthReport
+                        ? `${Math.abs(monthlyDeltaPercent)}% ${monthlyDelta >= 0 ? "acima" : "abaixo"} de ${previousMonthReport.shortLabel}`
+                        : "Navegue pelos meses para comparar"}
+                    </small>
+                  </div>
+                  <div className="report-insight-card">
+                    <span>Conta que mais concentrou gastos</span>
+                    <strong>{biggestAccount.name}</strong>
+                    <small>{formatMoney(biggestAccount.amount)}</small>
+                  </div>
+                  <div className="report-insight-card">
+                    <span>Projecao do mes</span>
+                    <strong>{formatMoney(spendingProjection)}</strong>
+                    <small>Estimativa com o ritmo atual</small>
+                  </div>
+                </div>
+              </article>
+
+              <article className="panel report-ranking-panel">
+                <div className="panel-heading">
+                  <div>
+                    <span className="eyebrow">Categorias</span>
+                    <h2>Onde voce mais gastou</h2>
+                  </div>
+                </div>
+                <div className="report-ranking-list">
+                  {reportCategoryTotals.slice(0, 6).map((category) => (
+                    <div className="report-ranking-row" key={category.name}>
+                      <span className={`dot ${category.tone}`} />
+                      <strong>{category.name}</strong>
+                      <div className="category-track">
+                        <span className={category.tone} style={{ width: `${(category.value / maxReportCategory) * 100}%` }} />
+                      </div>
+                      <em>{formatMoney(category.value)}</em>
+                    </div>
+                  ))}
+                  {reportCategoryTotals.length === 0 && <p className="empty-state">Ainda nao ha categorias para analisar.</p>}
+                </div>
+              </article>
+
+              <article className="panel report-ranking-panel">
+                <div className="panel-heading">
+                  <div>
+                    <span className="eyebrow">Contas</span>
+                    <h2>Cartoes e contas com maior uso</h2>
+                  </div>
+                </div>
+                <div className="report-account-list">
+                  {reportAccountTotals.slice(0, 6).map((account) => (
+                    <div className="report-account-row" key={account.name}>
+                      <div>
+                        <strong>{account.name}</strong>
+                        <span>{accountTypeLabel(account.type)} • {account.count} lancamentos</span>
+                      </div>
+                      <div className="report-account-track">
+                        <span style={{ width: `${(account.amount / maxReportAccount) * 100}%` }} />
+                      </div>
+                      <em>{formatMoney(account.amount)}</em>
+                    </div>
+                  ))}
+                  {reportAccountTotals.length === 0 && <p className="empty-state">Nenhuma conta movimentada neste ano.</p>}
+                </div>
+              </article>
+
+              <article className="panel report-type-panel">
+                <div className="panel-heading">
+                  <div>
+                    <span className="eyebrow">Tipo de gasto</span>
+                    <h2>Composicao dos lancamentos</h2>
+                  </div>
+                </div>
+                <div className="report-type-grid">
+                  {reportTypeTotals.map((type) => (
+                    <div className={`report-type-card report-type-${type.type}`} key={type.type}>
+                      <span>{type.label}</span>
+                      <strong>{formatMoney(type.value)}</strong>
+                      <div>
+                        <i style={{ width: `${(type.value / maxReportType) * 100}%` }} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </article>
+            </section>
+          </section>
         )}
 
         <footer className="app-footer">
           <span>© 2026 Stefferson Luz Silva. Todos os direitos reservados.</span>
-          <a href="https://instagram.com/steffersonluz" target="_blank" rel="noopener noreferrer" class="instagram-link">
-            <svg class="instagram-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <a href="https://instagram.com/steffersonluz" target="_blank" rel="noopener noreferrer" className="instagram-link">
+            <svg className="instagram-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <rect x="2" y="2" width="20" height="20" rx="5" ry="5"/>
               <circle cx="12" cy="12" r="5"/>
               <circle cx="17.5" cy="6.5" r="1.5"/>
