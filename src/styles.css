@@ -1,7 +1,30 @@
 :root {
+  --bg-app: #f7f8f6;
+  --bg-surface: #ffffff;
+  --bg-surface-soft: #fbfcfa;
+  --text-main: #1f2623;
+  --text-muted: #7b837e;
+  --border-soft: #e2e6e1;
+  --accent: #2d5f8b;
+  --accent-strong: #1f4d74;
+  --accent-soft: #edf3f8;
+  --success: #2f7f68;
+  --danger: #9d3a22;
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --shadow-soft: 0 10px 24px rgba(31, 38, 35, 0.08);
+  --space-1: 8px;
+  --space-2: 12px;
+  --space-3: 16px;
+  --space-4: 20px;
+  --fs-xs: 0.74rem;
+  --fs-sm: 0.82rem;
+  --fs-md: 0.92rem;
+  --lh-tight: 1.2;
+  --lh-body: 1.5;
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  color: #1f2623;
-  background: #f7f8f6;
+  color: var(--text-main);
+  background: var(--bg-app);
   font-synthesis: none;
   text-rendering: geometricPrecision;
   scrollbar-gutter: stable;
@@ -27,11 +50,18 @@ button {
   cursor: pointer;
 }
 
+.app-loading {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  color: var(--text-muted);
+}
+
 .app-shell {
   min-height: 100vh;
   display: grid;
   grid-template-columns: 248px minmax(0, 1fr);
-  background: #f7f8f6;
+  background: var(--bg-app);
 }
 
 .app-shell-enter {
@@ -46,8 +76,8 @@ button {
   display: flex;
   flex-direction: column;
   gap: 24px;
-  border-right: 1px solid #e2e6e1;
-  background: #fbfcfa;
+  border-right: 1px solid var(--border-soft);
+  background: var(--bg-surface-soft);
 }
 
 .brand {
@@ -68,7 +98,7 @@ button {
 .brand-subtitle {
   display: block;
   padding-left: 8px;
-  color: #7b5267;
+  color: #5f6d78;
   font-size: 0.78rem;
   font-weight: 760;
 }
@@ -80,12 +110,10 @@ button {
   align-items: center;
   gap: 10px;
   padding: 10px;
-  border: 1px solid rgba(216, 91, 150, 0.16);
+  border: 1px solid rgba(45, 95, 139, 0.18);
   border-radius: 16px;
-  background:
-    radial-gradient(circle at 0% 0%, rgba(248, 215, 230, 0.9) 0%, transparent 42%),
-    linear-gradient(135deg, rgba(255, 248, 251, 0.92) 0%, rgba(247, 219, 231, 0.5) 100%);
-  box-shadow: 0 12px 26px rgba(91, 35, 63, 0.07);
+  background: linear-gradient(145deg, #f8fbfe 0%, #eef4fa 100%);
+  box-shadow: 0 10px 20px rgba(31, 77, 116, 0.09);
 }
 
 .brand-user-avatar {
@@ -98,8 +126,8 @@ button {
   color: #fff;
   font-size: 1rem;
   font-weight: 860;
-  background: linear-gradient(145deg, #5b233f 0%, #d85b96 100%);
-  box-shadow: 0 10px 18px rgba(216, 91, 150, 0.2);
+  background: linear-gradient(145deg, #274f76 0%, #3d6f9d 100%);
+  box-shadow: 0 8px 16px rgba(39, 79, 118, 0.22);
 }
 
 .brand-user small,
@@ -108,7 +136,7 @@ button {
 }
 
 .brand-user small {
-  color: #8a6677;
+  color: #667786;
   font-size: 0.68rem;
   font-weight: 780;
   text-transform: uppercase;
@@ -117,7 +145,7 @@ button {
 .brand-user strong {
   max-width: 142px;
   overflow: hidden;
-  color: #4a1834;
+  color: #1f3f5c;
   font-size: 1rem;
   font-weight: 850;
   line-height: 1.15;
@@ -130,8 +158,8 @@ button {
 .metric small,
 .account-row span,
 .transaction-row span {
-  color: #7b837e;
-  font-size: 0.78rem;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
 }
 
 .nav-list {
@@ -144,7 +172,7 @@ button {
 .nav-item {
   width: 100%;
   border: 0;
-  border-radius: 10px;
+  border-radius: var(--radius-sm);
   color: #5f6963;
   background: transparent;
   padding: 10px;
@@ -162,15 +190,15 @@ button {
 
 .logout-button {
   margin-top: auto;
-  color: #9d3a22;
-  background: #fff6f2;
-  box-shadow: inset 0 0 0 1px rgba(157, 58, 34, 0.1);
+  color: #2b4f6d;
+  background: #eef4fa;
+  box-shadow: inset 0 0 0 1px rgba(45, 95, 139, 0.14);
 }
 
 .logout-button:hover,
 .logout-button:focus-visible {
-  color: #8a2f1a;
-  background: #f8e9e4;
+  color: #1f4d74;
+  background: #e1ecf7;
   outline: 0;
 }
 
@@ -186,10 +214,10 @@ button {
   display: grid;
   gap: 12px;
   padding: 18px;
-  border: 1px solid #e2e6e1;
-  border-radius: 14px;
-  color: #1f2623;
-  background: #fff;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  color: var(--text-main);
+  background: var(--bg-surface);
 }
 
 .sidebar-panel span {
@@ -288,9 +316,9 @@ button {
   place-items: center;
   padding: 24px;
   background:
-    radial-gradient(circle at 16% 16%, rgba(247, 219, 231, 0.74) 0%, transparent 28%),
-    radial-gradient(circle at 88% 8%, rgba(204, 233, 220, 0.68) 0%, transparent 30%),
-    linear-gradient(135deg, #f8f7f5 0%, #f4f7f3 100%);
+    radial-gradient(circle at 16% 16%, rgba(216, 228, 240, 0.72) 0%, transparent 28%),
+    radial-gradient(circle at 88% 8%, rgba(222, 233, 242, 0.62) 0%, transparent 30%),
+    linear-gradient(135deg, #f7f8f6 0%, #f1f5f8 100%);
 }
 
 .welcome-panel,
@@ -362,10 +390,8 @@ button {
   min-height: 54px;
   border-radius: 16px;
   padding-inline: 24px;
-  background:
-    radial-gradient(circle at 18% -16%, rgba(93, 205, 158, 0.55) 0%, transparent 36%),
-    linear-gradient(135deg, #0e1914 0%, #173326 36%, #256b53 72%, #31906f 100%);
-  box-shadow: 0 16px 30px rgba(31, 94, 72, 0.2);
+  background: linear-gradient(135deg, #1e3f5d 0%, #2d5f8b 100%);
+  box-shadow: 0 14px 28px rgba(31, 77, 116, 0.24);
 }
 
 .phone-preview {
@@ -400,12 +426,12 @@ button {
   padding: 13px;
   border-radius: 42px;
   background:
-    linear-gradient(145deg, rgba(255, 255, 255, 0.86), rgba(249, 221, 233, 0.58)),
-    #fff8fb;
+    linear-gradient(145deg, rgba(255, 255, 255, 0.9), rgba(225, 236, 246, 0.62)),
+    #f8fbfe;
   box-shadow:
-    inset 0 0 0 1px rgba(91, 35, 63, 0.08),
+    inset 0 0 0 1px rgba(45, 95, 139, 0.1),
     inset 0 0 0 6px rgba(255, 255, 255, 0.72),
-    0 34px 80px rgba(91, 35, 63, 0.18);
+    0 34px 80px rgba(31, 77, 116, 0.18);
 }
 
 .phone-speaker {
@@ -461,7 +487,7 @@ button {
 }
 
 .preview-footer strong {
-  color: #8f335c;
+  color: #2d5f8b;
   font-size: 0.82rem;
   font-weight: 840;
 }
@@ -524,8 +550,8 @@ button {
 
 .preview-bars span {
   border-radius: 999px 999px 12px 12px;
-  background: linear-gradient(180deg, #d85b96 0%, #f3c3d8 100%);
-  box-shadow: 0 12px 24px rgba(184, 88, 128, 0.16);
+  background: linear-gradient(180deg, #4f86b8 0%, #a4c3e3 100%);
+  box-shadow: 0 12px 24px rgba(31, 77, 116, 0.16);
 }
 
 .login-copy {
@@ -817,9 +843,9 @@ button {
 }
 
 .year-picker-options button.active {
-  color: #8f335c;
-  border-color: rgba(207, 83, 128, 0.34);
-  background: linear-gradient(145deg, #fff8fb 0%, #ffe0ec 100%);
+  color: #1f4d74;
+  border-color: rgba(45, 95, 139, 0.34);
+  background: linear-gradient(145deg, #f5f9fe 0%, #e3edf8 100%);
 }
 
 .year-picker-form {
@@ -899,8 +925,8 @@ button {
 
 .topbar {
   justify-content: space-between;
-  gap: 14px;
-  margin-bottom: 14px;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
   padding: 0;
   border: 0;
   border-radius: 0;
@@ -909,19 +935,32 @@ button {
 
 .period-header {
   align-items: start;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.period-focus-main {
+  flex: 1;
+  min-width: 280px;
+}
+
+.period-year-button {
+  min-height: auto;
+  margin: 0.25rem 0;
+  padding: 0.2rem 0.5rem;
+  font-size: 0.95em;
+  gap: 0.4rem;
 }
 
 .period-focus {
   width: 100%;
   min-height: 0;
   display: grid;
-  gap: 12px;
+  gap: var(--space-2);
   border-radius: 18px;
-  padding: 12px;
-  background:
-    radial-gradient(circle at 50% 0%, rgba(255, 226, 238, 0.92) 0%, rgba(255, 226, 238, 0) 42%),
-    linear-gradient(145deg, #fff8fb 0%, #f7dbe7 58%, #f0c9dc 100%);
-  box-shadow: inset 0 0 0 1px rgba(184, 88, 128, 0.18), 0 16px 34px rgba(118, 53, 82, 0.1);
+  padding: var(--space-2);
+  background: linear-gradient(145deg, #f9fbfd 0%, #eef3f8 100%);
+  box-shadow: inset 0 0 0 1px rgba(45, 95, 139, 0.14), 0 14px 28px rgba(31, 77, 116, 0.08);
   animation: period-slide-in 300ms ease both;
 }
 
@@ -937,11 +976,11 @@ button {
   min-height: 78px;
   border: 0;
   border-radius: 16px;
-  color: #8f4968;
-  background: rgba(255, 250, 252, 0.72);
+  color: #355a78;
+  background: rgba(250, 252, 254, 0.9);
   font-size: 1.6rem;
   font-weight: 760;
-  box-shadow: inset 0 0 0 1px rgba(184, 88, 128, 0.16);
+  box-shadow: inset 0 0 0 1px rgba(45, 95, 139, 0.2);
   transition: transform 180ms ease, box-shadow 180ms ease, color 180ms ease, background 180ms ease;
 }
 
@@ -949,9 +988,9 @@ button {
 .period-nav-button:focus-visible {
   outline: 0;
   transform: translateY(-1px);
-  color: #6f2d4d;
-  background: #fffafd;
-  box-shadow: inset 0 0 0 1px rgba(184, 88, 128, 0.28), 0 8px 18px rgba(118, 53, 82, 0.08);
+  color: #1f4d74;
+  background: #ffffff;
+  box-shadow: inset 0 0 0 1px rgba(45, 95, 139, 0.32), 0 8px 18px rgba(31, 77, 116, 0.12);
 }
 
 .period-display {
@@ -963,33 +1002,33 @@ button {
 }
 
 .period-display strong {
-  color: #332731;
+  color: #233646;
   font-size: clamp(2.1rem, 6vw, 3.3rem);
   line-height: 0.95;
 }
 
 .period-display>span {
-  color: #7e5c6e;
+  color: #5f6d78;
   font-size: 1rem;
   font-weight: 860;
 }
 
 .period-display small {
-  color: #8f4968;
+  color: #5d7284;
   font-size: 0.72rem;
   font-weight: 820;
 }
 
 .current-period-button {
   min-height: 28px;
-  border: 1px solid rgba(184, 88, 128, 0.2);
+  border: 1px solid rgba(45, 95, 139, 0.2);
   border-radius: 999px;
   padding: 0 12px;
-  color: #7b3d5d;
-  background: rgba(255, 250, 252, 0.74);
+  color: #355a78;
+  background: rgba(247, 251, 255, 0.9);
   font-size: 0.68rem;
   font-weight: 850;
-  box-shadow: inset 0 0 0 1px rgba(184, 88, 128, 0.08);
+  box-shadow: inset 0 0 0 1px rgba(45, 95, 139, 0.1);
   transition: transform 180ms ease, box-shadow 180ms ease, background 180ms ease;
 }
 
@@ -997,20 +1036,20 @@ button {
 .current-period-button:focus-visible {
   outline: 0;
   transform: translateY(-1px);
-  background: #fffafd;
-  box-shadow: inset 0 0 0 1px rgba(184, 88, 128, 0.22), 0 8px 18px rgba(118, 53, 82, 0.08);
+  background: #ffffff;
+  box-shadow: inset 0 0 0 1px rgba(45, 95, 139, 0.24), 0 8px 18px rgba(31, 77, 116, 0.1);
 }
 
 .current-period-button.return-current {
-  color: #8f335c;
-  border-color: rgba(207, 83, 128, 0.28);
-  background: #ffe0ec;
+  color: var(--accent-strong);
+  border-color: rgba(45, 95, 139, 0.32);
+  background: #dfeaf5;
 }
 
 .current-period-button.return-current:hover,
 .current-period-button.return-current:focus-visible {
-  background: #ffd0e2;
-  box-shadow: inset 0 0 0 1px rgba(207, 83, 128, 0.34), 0 8px 18px rgba(118, 53, 82, 0.1);
+  background: #d1e2f2;
+  box-shadow: inset 0 0 0 1px rgba(45, 95, 139, 0.36), 0 8px 18px rgba(31, 77, 116, 0.14);
 }
 
 .period-progress {
@@ -1019,7 +1058,7 @@ button {
   position: relative;
   margin-top: 8px;
   border-radius: 999px;
-  background: rgba(255, 250, 252, 0.62);
+  background: #e5ecf2;
 }
 
 .period-progress span {
@@ -1027,7 +1066,7 @@ button {
   width: 0;
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, #b85880 0%, #e283ad 100%);
+  background: linear-gradient(90deg, #3d6f9d 0%, #7fa2c4 100%);
   transition: width 260ms ease;
 }
 
@@ -1037,8 +1076,8 @@ button {
   position: absolute;
   top: 50%;
   border-radius: 50%;
-  background: #cf5b8a;
-  box-shadow: 0 0 0 4px #ffe0ec;
+  background: #3d6f9d;
+  box-shadow: 0 0 0 4px #dfeaf5;
   transform: translate(-50%, -50%);
   transition: left 260ms ease;
 }
@@ -1053,11 +1092,11 @@ button {
   min-height: 34px;
   border: 0;
   border-radius: 11px;
-  color: #80596b;
-  background: rgba(255, 250, 252, 0.62);
+  color: #4e6477;
+  background: rgba(242, 248, 253, 0.9);
   font-size: 0.72rem;
   font-weight: 840;
-  box-shadow: inset 0 0 0 1px rgba(184, 88, 128, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(45, 95, 139, 0.14);
   transition: transform 180ms ease, box-shadow 180ms ease, background 180ms ease;
 }
 
@@ -1065,14 +1104,14 @@ button {
 .period-month-grid button:focus-visible {
   outline: 0;
   transform: translateY(-1px);
-  background: #fffafd;
-  box-shadow: inset 0 0 0 1px rgba(184, 88, 128, 0.24), 0 8px 18px rgba(118, 53, 82, 0.07);
+  background: #ffffff;
+  box-shadow: inset 0 0 0 1px rgba(45, 95, 139, 0.24), 0 8px 18px rgba(31, 77, 116, 0.1);
 }
 
 .period-month-grid button.active {
-  color: #8f335c;
-  background: #ffe0ec;
-  box-shadow: inset 0 0 0 1px rgba(207, 83, 128, 0.34);
+  color: #1f4d74;
+  background: #dbe8f5;
+  box-shadow: inset 0 0 0 1px rgba(45, 95, 139, 0.34);
 }
 
 .period-actions {
@@ -1093,7 +1132,7 @@ button {
   font-size: 0.95rem;
   line-height: 1;
   text-align: center;
-  box-shadow: 0 12px 26px rgba(31, 38, 35, 0.07);
+  box-shadow: var(--shadow-soft);
   transition: transform 180ms ease, box-shadow 180ms ease, filter 180ms ease;
 }
 
@@ -1110,27 +1149,21 @@ button {
 }
 
 .add-expense-button {
-  border-color: rgba(52, 151, 118, 0.38) !important;
-  background:
-    radial-gradient(circle at 18% -16%, rgba(93, 205, 158, 0.55) 0%, transparent 36%),
-    linear-gradient(135deg, #0e1914 0%, #173326 36%, #256b53 72%, #31906f 100%);
-  box-shadow: 0 16px 30px rgba(31, 94, 72, 0.2);
+  border-color: rgba(33, 67, 99, 0.28) !important;
+  background: linear-gradient(135deg, #1e3f5d 0%, #2d5f8b 100%);
+  box-shadow: 0 12px 24px rgba(31, 77, 116, 0.24);
 }
 
 .clear-data-button {
-  border-color: rgba(202, 94, 62, 0.2) !important;
-  color: #9b3f28 !important;
-  background:
-    radial-gradient(circle at 18% 0%, rgba(255, 255, 255, 0.92) 0%, transparent 36%),
-    linear-gradient(135deg, #fff8f5 0%, #ffe4dc 54%, #f7cdbc 100%) !important;
+  border-color: rgba(157, 58, 34, 0.24) !important;
+  color: #8f3520 !important;
+  background: #fbeeea !important;
 }
 
 .configure-year-button {
-  border-color: rgba(72, 126, 186, 0.22) !important;
-  color: #275e91 !important;
-  background:
-    radial-gradient(circle at 18% 0%, rgba(255, 255, 255, 0.92) 0%, transparent 36%),
-    linear-gradient(135deg, #f6fbff 0%, #dcecff 54%, #c7def7 100%) !important;
+  border-color: rgba(45, 95, 139, 0.25) !important;
+  color: #1f4d74 !important;
+  background: #eaf1f8 !important;
 }
 
 .eyebrow {
@@ -1153,7 +1186,7 @@ h1 {
 }
 
 h2 {
-  font-size: 1.16rem;
+  font-size: 1.08rem;
 }
 
 .top-actions {
@@ -1198,21 +1231,21 @@ select:focus {
 
 .primary-button {
   color: #fff;
-  background: #1f2623;
+  background: linear-gradient(135deg, #1e3f5d 0%, #2d5f8b 100%);
 }
 
 .ghost-button {
-  color: #1f2623;
-  background: #eef2ee;
+  color: #294862;
+  background: #edf3f8;
 }
 
 .danger-button {
-  color: #9d3a22;
-  background: #f8e9e4;
+  color: #2b4f6d;
+  background: #e8f0f8;
 }
 
 .danger-button:hover {
-  background: #f7d3cb;
+  background: #dce9f6;
 }
 
 .full {
@@ -1222,21 +1255,21 @@ select:focus {
 .metrics-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 14px;
-  margin-bottom: 14px;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
 }
 
 .metric,
 .panel {
   border: 1px solid #e2e6e1;
   border-radius: 14px;
-  background: linear-gradient(145deg, #ffffff 0%, #f8faf7 100%);
+  background: #fff;
   box-shadow: 0 1px 2px rgba(31, 38, 35, 0.04);
 }
 
 .metric {
   min-height: 132px;
-  padding: 18px;
+  padding: var(--space-3);
   display: flex;
   flex-direction: column;
   justify-content: space-between;
@@ -1289,6 +1322,8 @@ select:focus {
 .metric span {
   color: rgba(31, 38, 35, 0.7);
   font-weight: 720;
+  font-size: var(--fs-xs);
+  line-height: var(--lh-tight);
 }
 
 .metric strong {
@@ -1309,9 +1344,9 @@ select:focus {
 }
 
 .metric-danger {
-  border-color: #f0d4cc;
-  color: #8f3323;
-  background: linear-gradient(145deg, #ffffff 0%, #fff0ec 100%);
+  border-color: #c7dced;
+  color: #1f4d74;
+  background: linear-gradient(145deg, #ffffff 0%, #edf5fc 100%);
 }
 
 .entry-section,
@@ -1319,7 +1354,7 @@ select:focus {
 .cards-view,
 .secondary-grid {
   display: grid;
-  gap: 14px;
+  gap: var(--space-3);
 }
 
 .entry-section,
@@ -1335,8 +1370,8 @@ select:focus {
 .dashboard-view {
   display: grid;
   grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.4fr);
-  gap: 14px;
-  margin-bottom: 14px;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
 }
 
 .annual-panel,
@@ -1359,8 +1394,8 @@ select:focus {
 }
 
 .annual-status.risk {
-  color: #9d3a22;
-  background: #fff0ec;
+  color: #1f4d74;
+  background: #eaf2fa;
 }
 
 .annual-hero {
@@ -1694,7 +1729,7 @@ select:focus {
 }
 
 .panel {
-  padding: 18px;
+  padding: var(--space-3);
 }
 
 .profile-settings-list {
@@ -2729,7 +2764,7 @@ label {
 
 .ledger-item.single {
   border-left-color: #e86f51;
-  background: linear-gradient(145deg, #ffffff 0%, #fff0ec 100%);
+  background: linear-gradient(145deg, #ffffff 0%, #eef5fc 100%);
 }
 
 .ledger-item.refund-item {
@@ -2753,8 +2788,8 @@ label {
   flex: 0 0 34px;
   border: 0;
   border-radius: 10px;
-  color: #7f2f25;
-  background: #f8e9e4;
+  color: #2b4f6d;
+  background: #e8f0f8;
   font-size: 1.3rem;
   line-height: 1;
 }
@@ -2960,7 +2995,7 @@ label {
 
 .reports-view {
   display: grid;
-  gap: 14px;
+  gap: var(--space-3);
 }
 
 .reports-hero {
@@ -2987,8 +3022,8 @@ label {
   text-align: center;
   border-radius: 16px;
   padding: 16px;
-  background: rgba(47, 127, 104, 0.06);
-  border: 1px solid rgba(47, 127, 104, 0.14);
+  background: rgba(45, 95, 139, 0.08);
+  border: 1px solid rgba(45, 95, 139, 0.2);
 }
 
 .reports-hero-score span {
@@ -3002,7 +3037,7 @@ label {
 .reports-hero-score strong {
   display: block;
   margin: 6px 0;
-  color: #2f7f68;
+  color: var(--accent-strong);
   font-size: 2.2rem;
   font-weight: 880;
 }
@@ -3015,20 +3050,20 @@ label {
 .reports-kpi-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 14px;
+  gap: var(--space-3);
 }
 
 .report-kpi {
-  border: 1px solid #e2e6e1;
-  border-radius: 14px;
-  padding: 18px;
-  background: linear-gradient(145deg, #ffffff 0%, #f8faf7 100%);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  background: linear-gradient(145deg, #ffffff 0%, #f5f8fb 100%);
 }
 
 .report-kpi span {
   display: block;
   color: #7b837e;
-  font-size: 0.74rem;
+  font-size: var(--fs-xs);
   font-weight: 760;
 }
 
@@ -3048,7 +3083,7 @@ label {
 .reports-main-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
-  gap: 14px;
+  gap: var(--space-3);
 }
 
 .report-chart-panel,
@@ -3137,7 +3172,7 @@ label {
   padding-top: 12px;
   border-top: 1px solid #edf0ec;
   color: #68726c;
-  font-size: 0.78rem;
+  font-size: var(--fs-sm);
 }
 
 .report-legend i {
@@ -3165,14 +3200,14 @@ label {
 .report-insight-card {
   border-radius: 12px;
   padding: 14px;
-  background: rgba(255, 255, 255, 0.72);
+  background: #fff;
   border: 1px solid #edf0ec;
 }
 
 .report-insight-card span {
   display: block;
   color: #7b837e;
-  font-size: 0.72rem;
+  font-size: var(--fs-xs);
   font-weight: 760;
 }
 
@@ -3185,7 +3220,8 @@ label {
 
 .report-insight-card small {
   color: #68726c;
-  font-size: 0.72rem;
+  font-size: var(--fs-xs);
+  line-height: var(--lh-body);
 }
 
 .report-ranking-list,

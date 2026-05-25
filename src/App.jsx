@@ -1425,7 +1425,7 @@ function App() {
 
   if (authStep === "loading") {
     return (
-      <div style={{ height: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div className="app-loading">
         <p>Carregando...</p>
       </div>
     );
@@ -1501,8 +1501,8 @@ function App() {
       </aside>
 
       <section className="content">
-        <header className="topbar period-header" style={{ display: "flex", gap: "1rem", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
-          <section className="period-focus" aria-label="Periodo financeiro atual" style={{ flex: 1, minWidth: "280px" }}>
+        <header className="topbar period-header">
+          <section className="period-focus period-focus-main" aria-label="Periodo financeiro atual">
             <div className="period-main">
               <button className="period-nav-button" type="button" onClick={() => moveActiveMonth(-1)} aria-label="Mes anterior">
                 ‹
@@ -1510,11 +1510,10 @@ function App() {
               <div className="period-display">
                 <strong>{activeMonthName}</strong>
                 <button
-                  className="ghost-button"
+                  className="ghost-button period-year-button"
                   type="button" 
                   onClick={openYearSetup}
                   title="Alterar ano"
-                  style={{ padding: "0.2rem 0.5rem", minHeight: "auto", height: "auto", margin: "0.25rem 0", gap: "0.4rem", fontSize: "0.95em" }}
                 >
                   {activeYear} <Icon>📅</Icon>
                 </button>

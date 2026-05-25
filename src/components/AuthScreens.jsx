@@ -62,7 +62,7 @@ export function LoginScreen({ mode, draft, error, notice, onChange, onModeChange
 
   return (
     <main className="auth-screen login-screen">
-      <section className="login-panel" aria-label="Login local">
+      <section className="login-panel" aria-label="Acesso da conta">
         <BrandIdentity subtitle="" />
 
         <div className="login-copy">
@@ -70,7 +70,7 @@ export function LoginScreen({ mode, draft, error, notice, onChange, onModeChange
           <p>
             {isRecover
               ? "Informe o e-mail da conta para enviarmos o link de redefinicao."
-              : "Este acesso ainda e local neste navegador. A estrutura ja esta preparada para conectar ao banco de dados depois."}
+              : "Acesse sua conta na nuvem com seguranca e sincronizacao entre dispositivos."}
           </p>
         </div>
 
@@ -115,7 +115,7 @@ export function LoginScreen({ mode, draft, error, notice, onChange, onModeChange
                 type="password"
                 value={draft.password}
                 onChange={(event) => onChange("password", event.target.value)}
-                placeholder="Senha local"
+                placeholder="Sua senha"
               />
             </label>
           )}
@@ -138,7 +138,7 @@ export function LoginScreen({ mode, draft, error, notice, onChange, onModeChange
                 checked={draft.remember}
                 onChange={(event) => onChange("remember", event.target.checked)}
               />
-              Manter conectado neste navegador
+              Manter conectado
             </label>
           )}
 
