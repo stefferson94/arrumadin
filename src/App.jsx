@@ -7,6 +7,7 @@ import { defaultActiveView, navigationItemIds, navigationItems } from "./config/
 import { transactionTypeOptions } from "./config/transactions.js";
 import {
   createMonthId,
+  createSequentialMonths,
   createYearMonths,
   getCurrentMonthId,
   getMonthNumber,
@@ -25,7 +26,7 @@ import {
   renameMapValues
 } from "./domain/accounts.js";
 import { categoryTone, normalizeCategory } from "./domain/categories.js";
-import { formatMoney, parseCurrencyInput } from "./domain/money.js";
+import { clampInteger, formatMoney, parseCurrencyInput } from "./domain/money.js";
 import {
   buildExpensesFromForm,
   completeMissingInstallments,
@@ -38,7 +39,7 @@ import {
   normalizeLedgerType,
   parseInstallmentDescription
 } from "./domain/transactions.js";
-import { getExpenses, saveExpenses, updateExpense, deleteExpense, deleteAllExpenses } from "./services/expenses.js";
+import { getExpenses, saveExpenses, updateExpense, deleteExpense, deleteAllExpenses, renameExpenseCard } from "./services/expenses.js";
 import { getSettings, saveSettings } from "./services/settings.js";
 import { getIncomes, saveIncome, deleteAllIncomes } from "./services/incomes.js";
 import {
@@ -690,19 +691,23 @@ function App() {
     }));
   }
 
-  function deleteInstallmentSeries(transaction) {
+  async function deleteInstallmentSeries(transaction) {
     const info = getInstallmentInfo(transaction);
     const base = info?.base;
 
-    setSavedExpenses((current) =>
-      current.filter((expense) => {
-        if (transaction.seriesId && expense.seriesId === transaction.seriesId) return false;
-        if (!base || expense.type !== "installment") return true;
+    const toDeleteIds = savedExpenses.filter((expense) => {
+      if (transaction.seriesId && expense.seriesId === transaction.seriesId) return true;
+      if (!base || expense.type !== "installment") return false;
 
-        const expenseInfo = parseInstallmentDescription(expense.description);
-        return !(expenseInfo?.base === base && expense.card === transaction.card && expense.amount === transaction.amount);
-      })
-    );
+      const expenseInfo = parseInstallmentDescription(expense.description);
+      return (expenseInfo?.base === base && expense.card === transaction.card && expense.amount === transaction.amount);
+    }).map(e => e.id);
+
+    for (const id of toDeleteIds) {
+      await deleteExpense(id);
+    }
+
+    setSavedExpenses((current) => current.filter((expense) => !toDeleteIds.includes(expense.id)));
 
     setLedgerOverrides((current) => {
       const next = { ...current };
@@ -806,42 +811,160 @@ function App() {
     if (!editingTransaction.description.trim() || Number.isNaN(parsedAmount)) return;
     const amount = normalizeAmountForType(editingTransaction.type, parsedAmount);
 
+    const isInstallment = editingTransaction.type === "installment";
+    const installments = isInstallment ? clampInteger(editingTransaction.installments, 1, 48) : null;
+    const installmentNumber = isInstallment ? clampInteger(editingTransaction.startInstallment, 1, installments) : null;
+    const description = isInstallment
+      ? `${editingTransaction.description.trim()} ${installmentNumber}/${installments}`
+      : editingTransaction.description.trim();
+
     if (editingTransaction.dragId.startsWith("saved:")) {
       const expenseId = editingTransaction.dragId.replace("saved:", "");
       
-      const updatedData = {
-        description: editingTransaction.description.trim(),
-        amount,
-        card: editingTransaction.card,
-        type: editingTransaction.type,
-        monthId: editingTransaction.source.monthId,
-        installments: editingTransaction.type === "installment"
-          ? clampInteger(editingTransaction.installments, 1, 48)
-          : null,
-        installmentNumber: editingTransaction.type === "installment"
-          ? clampInteger(editingTransaction.startInstallment, 1, clampInteger(editingTransaction.installments, 1, 48))
-          : null,
-        seriesId: editingTransaction.source.seriesId
-      };
+      const isInstallmentSeriesEdit = editingTransaction.type === "installment" && editingTransaction.source.type === "installment";
 
-      const result = await updateExpense(expenseId, updatedData);
-      if (result.error) {
-        window.alert("Erro ao salvar edição: " + result.error);
-        return;
+      if (isInstallmentSeriesEdit) {
+        const info = getInstallmentInfo(editingTransaction.source);
+        const base = info?.base;
+        const seriesId = editingTransaction.source.seriesId;
+
+        const seriesExpenses = savedExpenses.filter((expense) => {
+          if (seriesId && expense.seriesId === seriesId) return true;
+          if (!base || expense.type !== "installment") return false;
+          const expenseInfo = parseInstallmentDescription(expense.description);
+          return (expenseInfo?.base === base && expense.card === editingTransaction.source.card);
+        });
+
+        seriesExpenses.sort((a, b) => a.monthId.localeCompare(b.monthId));
+
+        const newBase = editingTransaction.description.trim();
+        const editedIndex = seriesExpenses.findIndex(e => e.id === expenseId);
+        const firstItemNumber = installmentNumber - (editedIndex !== -1 ? editedIndex : 0);
+
+        const toUpdate = [];
+        const toDelete = [];
+        let maxExistingNumber = 0;
+        let lastMonthId = seriesExpenses[seriesExpenses.length - 1]?.monthId || editingTransaction.source.monthId;
+
+        for (let i = 0; i < seriesExpenses.length; i++) {
+          const expense = seriesExpenses[i];
+          const num = firstItemNumber + i;
+
+          if (num > installments || num < 1) {
+             toDelete.push(expense.id);
+          } else {
+             toUpdate.push({
+               ...expense,
+               description: `${newBase} ${num}/${installments}`,
+               amount,
+               card: editingTransaction.card,
+               installments: installments,
+               installmentNumber: num,
+               seriesId: seriesId || expense.seriesId
+             });
+             if (num > maxExistingNumber) {
+               maxExistingNumber = num;
+               lastMonthId = expense.monthId;
+             }
+          }
+        }
+
+        for (const exp of toUpdate) {
+          await updateExpense(exp.id, {
+            description: exp.description,
+            amount: exp.amount,
+            card: exp.card,
+            type: "installment",
+            monthId: exp.monthId,
+            installments: exp.installments,
+            installmentNumber: exp.installmentNumber,
+            seriesId: exp.seriesId
+          });
+        }
+
+        for (const id of toDelete) {
+          await deleteExpense(id);
+        }
+
+        const newExpenses = [];
+        if (maxExistingNumber < installments) {
+          const monthsToCreate = installments - maxExistingNumber;
+          const newMonths = createSequentialMonths(lastMonthId, monthsToCreate + 1).slice(1);
+          
+          const newRows = newMonths.map((month, index) => {
+            const num = maxExistingNumber + 1 + index;
+            return {
+              description: `${newBase} ${num}/${installments}`,
+              amount,
+              card: editingTransaction.card,
+              type: "installment",
+              monthId: month.id,
+              installments: installments,
+              installmentNumber: num,
+              seriesId: seriesId
+            };
+          });
+
+          if (newRows.length > 0) {
+            const result = await saveExpenses(newRows);
+            if (result.data) {
+              newExpenses.push(...result.data);
+            }
+          }
+        }
+
+        setSavedExpenses((current) => {
+          let next = current.filter(e => !toDelete.includes(e.id));
+          next = next.map(e => {
+            const updated = toUpdate.find(u => u.id === e.id);
+            return updated ? updated : e;
+          });
+          return [...next, ...newExpenses];
+        });
+
+      } else {
+        const updatedData = {
+          description,
+          amount,
+          card: editingTransaction.card,
+          type: editingTransaction.type,
+          monthId: editingTransaction.source.monthId,
+          installments,
+          installmentNumber,
+          seriesId: editingTransaction.source.seriesId
+        };
+
+        const result = await updateExpense(expenseId, updatedData);
+        if (result.error) {
+          window.alert("Erro ao salvar edição: " + result.error);
+          return;
+        }
+
+        setSavedExpenses((current) =>
+          current.map((expense) =>
+            expense.id === expenseId ? { ...expense, ...result.data } : expense
+          )
+        );
       }
 
-      setSavedExpenses((current) =>
-        current.map((expense) =>
-          expense.id === expenseId ? { ...expense, ...result.data } : expense
-        )
-      );
+      // Limpa as sobreposições locais para o App ler diretamente do banco de dados agora
+      setLedgerOverrides((current) => {
+        const next = { ...current };
+        delete next[editingTransaction.dragId];
+        return next;
+      });
+      setMovedColumns((current) => {
+        const next = { ...current };
+        delete next[editingTransaction.dragId];
+        return next;
+      });
     } else {
       setLedgerOverrides((current) => ({
         ...current,
         [editingTransaction.dragId]: {
           ...(current[editingTransaction.dragId] ?? {}),
           type: normalizeLedgerType(editingTransaction.type),
-          description: editingTransaction.description.trim(),
+          description,
           amount,
           column: editingTransaction.card
         }
@@ -1066,7 +1189,7 @@ function App() {
     setProfileDraft(current => ({ ...current, newPassword: "", confirmNewPassword: "" }));
   }
 
-  function renameAccountColumn(oldName, rawNextName) {
+  async function renameAccountColumn(oldName, rawNextName) {
     const nextName = rawNextName.trim();
     if (!nextName || nextName === oldName) return;
     if (accountColumns.includes(nextName)) {
@@ -1118,6 +1241,8 @@ function App() {
           }
         : current
     );
+
+    await renameExpenseCard(oldName, nextName);
   }
 
   function commitColumnName(oldName, rawNextName) {
@@ -1681,7 +1806,7 @@ function App() {
                   </label>
                   <div className="form-row">
                     <label>
-                      Valor
+                      {form.type === "installment" ? "Valor da parcela" : "Valor"}
                       <input
                         name="amount"
                         inputMode="decimal"
@@ -1861,7 +1986,7 @@ function App() {
                                   className={`ledger-item ${section.key} ${transaction.ledgerType === "adjustment" ? "refund-item" : ""}`}
                                   key={transaction.dragId}
                                 >
-                                  <span>{transaction.description}</span>
+                                  <span>{section.key === "installment" ? (getInstallmentInfo(transaction)?.base ?? transaction.description) : transaction.description}</span>
                                   {section.key === "installment" && (
                                     <small>{installmentHint(transaction)}</small>
                                   )}
@@ -2308,7 +2433,7 @@ function App() {
               </select>
             </label>
             <label>
-              Valor
+              {editingTransaction.type === "installment" ? "Valor da parcela" : "Valor"}
               <input inputMode="decimal" value={editingTransaction.amount} onChange={(event) => updateEditingForm("amount", event.target.value)} />
             </label>
 

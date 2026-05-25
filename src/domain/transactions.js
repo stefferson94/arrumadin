@@ -179,24 +179,24 @@ export function installmentHint(transaction) {
 }
 
 export function getInstallmentInfo(transaction) {
+  const parsed = parseInstallmentDescription(transaction.description);
+
   if (transaction.installmentNumber && transaction.installments) {
     return {
+      base: parsed?.base ?? transaction.description,
       current: transaction.installmentNumber,
       total: transaction.installments,
       nextMonthId: nextMonthId(transaction.monthId)
     };
   }
 
-  const match = transaction.description.match(/(\d+)\s*\/\s*(\d+)/);
-  if (!match) return null;
-
-  const current = Number.parseInt(match[1], 10);
-  const total = Number.parseInt(match[2], 10);
+  if (!parsed) return null;
 
   return {
-    current,
-    total,
-    nextMonthId: current < total ? nextMonthId(transaction.monthId) : null
+    base: parsed.base,
+    current: parsed.current,
+    total: parsed.total,
+    nextMonthId: parsed.current < parsed.total ? nextMonthId(transaction.monthId) : null
   };
 }
 

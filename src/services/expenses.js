@@ -118,3 +118,16 @@ export async function deleteAllExpenses() {
   const { error } = await supabase.from("expenses").delete().eq("user_id", user.id);
   return !error;
 }
+
+export async function renameExpenseCard(oldCardName, newCardName) {
+  const { error } = await supabase
+    .from("expenses")
+    .update({ card: newCardName })
+    .eq("card", oldCardName);
+
+  if (error) {
+    console.error("Erro ao renomear conta no Supabase:", error);
+    return false;
+  }
+  return true;
+}
