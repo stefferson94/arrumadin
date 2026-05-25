@@ -610,15 +610,6 @@ function App() {
     });
   }
 
-  function focusQuickEntry() {
-    clearCreationFeedback();
-    setActiveView("lancamentos");
-    window.setTimeout(() => {
-      quickEntryRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-      quickEntryRef.current?.querySelector("input")?.focus({ preventScroll: true });
-    }, 0);
-  }
-
   async function removeExpense(expenseId) {
     const success = await deleteExpense(expenseId);
     if (!success) {
@@ -1290,15 +1281,23 @@ function App() {
       </aside>
 
       <section className="content">
-        <header className="topbar period-header">
-          <section className="period-focus" aria-label="Periodo financeiro atual">
+        <header className="topbar period-header" style={{ display: "flex", gap: "1rem", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
+          <section className="period-focus" aria-label="Periodo financeiro atual" style={{ flex: 1, minWidth: "280px" }}>
             <div className="period-main">
               <button className="period-nav-button" type="button" onClick={() => moveActiveMonth(-1)} aria-label="Mes anterior">
                 ‹
               </button>
               <div className="period-display">
                 <strong>{activeMonthName}</strong>
-                <span>{activeYear}</span>
+                <button
+                  className="ghost-button"
+                  type="button" 
+                  onClick={openYearSetup}
+                  title="Alterar ano"
+                  style={{ padding: "0.2rem 0.5rem", minHeight: "auto", height: "auto", margin: "0.25rem 0", gap: "0.4rem", fontSize: "0.95em" }}
+                >
+                  {activeYear} <Icon>📅</Icon>
+                </button>
                 <small>{activeMonthNumber} de 12</small>
                 <button
                   className={`current-period-button ${isCurrentMonth ? "" : "return-current"}`}
@@ -1332,17 +1331,6 @@ function App() {
               ))}
             </div>
           </section>
-        </header>
-
-        <header className="topbar actions-header">
-          <div className="top-actions period-actions">
-            <button className="primary-button add-expense-button" type="button" onClick={focusQuickEntry}>
-              <span>Novo gasto</span>
-            </button>
-            <button className="ghost-button configure-year-button" type="button" onClick={openYearSetup}>
-              <span>Alterar ano</span>
-            </button>
-          </div>
         </header>
 
         <div className="sidebar-panel spending-timeline">
@@ -1656,13 +1644,13 @@ function App() {
               </aside>
             </section>
 
-        <section className="ledger-flow">
-          <article className="panel ledger-panel">
-            <div className="panel-heading">
-              <div>
-                <span className="eyebrow">Planilha do mes</span>
-                <h2>Lancamentos por conta</h2>
-              </div>
+            <section className="ledger-flow">
+              <article className="panel ledger-panel">
+                <div className="panel-heading">
+                  <div>
+                    <span className="eyebrow">Planilha do mes</span>
+                    <h2>Lancamentos por conta</h2>
+                  </div>
               <div className="panel-actions">
                 {renderNewColumnControl()}
                 <span className="ledger-count">{allTransactions.length} itens</span>

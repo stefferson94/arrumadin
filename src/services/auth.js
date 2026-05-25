@@ -11,6 +11,10 @@ export async function getCurrentSession() {
 }
 
 export async function createLocalAccount({ name, email, password, confirmPassword }) {
+  if (!name || !name.trim()) {
+    return { ok: false, message: "O nome é obrigatório para criar a conta." };
+  }
+
   if (password !== confirmPassword) {
     return { ok: false, message: "As senhas não conferem." };
   }
