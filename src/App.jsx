@@ -1515,7 +1515,7 @@ function App() {
                   onClick={openYearSetup}
                   title="Alterar ano"
                 >
-                  {activeYear} <Icon>📅</Icon>
+                  {activeYear}
                 </button>
                 <small>{activeMonthNumber} de 12</small>
                 <button
@@ -1523,7 +1523,7 @@ function App() {
                   type="button"
                   onClick={goToCurrentMonth}
                 >
-                  {isCurrentMonth ? "Hoje" : "Voltar"}
+                  {isCurrentMonth ? "Mês atual" : "Voltar para o mês corrente"}
                 </button>
                 <div className="period-progress" aria-hidden="true">
                   <span style={{ width: `${annualProgress}%` }} />

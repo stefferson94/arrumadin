@@ -950,6 +950,30 @@ button {
   padding: 0.2rem 0.5rem;
   font-size: 0.95em;
   gap: 0.4rem;
+  border: 1px solid transparent;
+  transition:
+    transform 180ms ease,
+    background 180ms ease,
+    color 180ms ease,
+    border-color 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.period-year-button:hover,
+.period-year-button:focus-visible {
+  color: #1f4d74;
+  background: #e8f1fa;
+  border-color: rgba(45, 95, 139, 0.28);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.65),
+    0 6px 14px rgba(31, 77, 116, 0.12);
+  transform: translateY(-1px);
+  outline: 0;
+}
+
+.period-year-button:active {
+  transform: translateY(0);
+  box-shadow: inset 0 0 0 1px rgba(45, 95, 139, 0.24);
 }
 
 .period-focus {
@@ -994,6 +1018,7 @@ button {
 }
 
 .period-display {
+  width: 100%;
   min-width: 0;
   display: grid;
   justify-items: center;
@@ -1053,12 +1078,34 @@ button {
 }
 
 .period-progress {
-  width: min(100%, 180px);
-  height: 8px;
+  width: 100%;
+  max-width: 100%;
+  height: 10px;
   position: relative;
-  margin-top: 8px;
+  justify-self: stretch;
+  margin-top: 10px;
   border-radius: 999px;
-  background: #e5ecf2;
+  background: linear-gradient(90deg, #eaf1f7 0%, #dde8f2 100%);
+  overflow: visible;
+}
+
+.period-progress::before {
+  content: "";
+  position: absolute;
+  inset: -4px 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background-image: repeating-linear-gradient(
+    to right,
+    transparent 0,
+    transparent calc(8.333% - 1px),
+    rgba(61, 111, 157, 0.2) calc(8.333% - 1px),
+    rgba(61, 111, 157, 0.2) 8.333%
+  );
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  padding: 4px 0;
+  opacity: 0.55;
 }
 
 .period-progress span {
@@ -3622,7 +3669,7 @@ label {
   }
 
   .period-progress {
-    width: min(100%, 140px);
+    width: 100%;
     margin-top: 5px;
   }
 
