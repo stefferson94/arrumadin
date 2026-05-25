@@ -47,6 +47,51 @@ export async function loginLocalAccount({ email, password }) {
   return { ok: true, user: { id: data.user.id, name: data.user.user_metadata?.name || data.user.email, email: data.user.email } };
 }
 
+export async function requestPasswordReset(email) {
+  const normalizedEmail = String(email ?? "").trim();
+  if (!normalizedEmail) {
+    return { ok: false, message: "Informe o e-mail da conta para recuperar a senha." };
+  }
+
+  const { error } = await supabase.auth.resetPasswordForEmail(normalizedEmail, {
+    redirectTo: window.location.origin
+  });
+
+  if (error) {
+    return { ok: false, message: error.message };
+  }
+
+  return { ok: true };
+}
+
 export async function logoutLocalAccount() {
   await supabase.auth.signOut();
+}
+
+export async function updateUserAccount(updates) {
+  const updateData = {};
+
+  if (updates.password) {
+    updateData.password = updates.password;
+  }
+  if (updates.email) {
+    updateData.email = updates.email;
+  }
+  if (updates.name) {
+    updateData.data = { name: updates.name };
+  }
+
+  const { data, error } = await supabase.auth.updateUser(updateData);
+
+  if (error) {
+    return { ok: false, message: error.message };
+  }
+
+  const updatedUser = {
+    id: data.user.id,
+    name: data.user.user_metadata?.name || data.user.email,
+    email: data.user.email
+  };
+
+  return { ok: true, user: updatedUser };
 }

@@ -45,7 +45,9 @@ import {
   createLocalAccount,
   getCurrentSession,
   loginLocalAccount,
-  logoutLocalAccount
+  logoutLocalAccount,
+  requestPasswordReset,
+  updateUserAccount
 } from "./services/auth.js";
 
 function isValidMonthId(monthId) {
@@ -78,6 +80,7 @@ function App() {
     remember: true
   });
   const [loginError, setLoginError] = useState("");
+  const [loginNotice, setLoginNotice] = useState("");
   const [isYearPickerOpen, setIsYearPickerOpen] = useState(false);
   const [yearPickerDraft, setYearPickerDraft] = useState(String(getMonthYear(getCurrentMonthId())));
   const [yearPickerError, setYearPickerError] = useState("");
@@ -93,6 +96,9 @@ function App() {
   const [newColumnError, setNewColumnError] = useState("");
   const [editingIncome, setEditingIncome] = useState(false);
   const [incomeDraft, setIncomeDraft] = useState("");
+  const [profileDraft, setProfileDraft] = useState({ name: "", newPassword: "", confirmNewPassword: "" });
+  const [profileMessage, setProfileMessage] = useState({ type: "", text: "" });
+  const [pendingFixedDeletion, setPendingFixedDeletion] = useState(null);
   const quickEntryRef = useRef(null);
   const newColumnInputRef = useRef(null);
   const [formError, setFormError] = useState("");
@@ -447,6 +453,18 @@ function App() {
     });
   }, [localUser]);
 
+  useEffect(() => {
+    if (localUser) {
+      setProfileDraft(current => ({ ...current, name: localUser.name, newPassword: "", confirmNewPassword: "" }));
+    }
+  }, [localUser]);
+
+  useEffect(() => {
+    if (activeView !== "perfil") {
+      setProfileMessage({ type: "", text: "" });
+    }
+  }, [activeView]);
+
   const reportTypeTotals = useMemo(() => {
     const labels = {
       single: "Avulsos",
@@ -638,12 +656,28 @@ function App() {
     }
 
     if (transaction.ledgerType === "fixed") {
-      await deleteFixedSeries(transaction);
+      setPendingFixedDeletion(transaction);
       return;
     }
 
+    await deleteSingleTransaction(transaction);
+  }
+
+  async function confirmDeleteFixedSeries() {
+    if (!pendingFixedDeletion) return;
+    await deleteFixedSeries(pendingFixedDeletion);
+    setPendingFixedDeletion(null);
+  }
+
+  async function confirmDeleteFixedSingle() {
+    if (!pendingFixedDeletion) return;
+    await deleteSingleTransaction(pendingFixedDeletion);
+    setPendingFixedDeletion(null);
+  }
+
+  async function deleteSingleTransaction(transaction) {
     if (transaction.dragId.startsWith("saved:")) {
-      removeExpense(transaction.dragId.replace("saved:", ""));
+      await removeExpense(transaction.dragId.replace("saved:", ""));
       return;
     }
 
@@ -872,22 +906,33 @@ function App() {
       [field]: value
     }));
     setLoginError("");
+    setLoginNotice("");
   }
 
   function changeAuthMode(nextMode) {
     setAuthMode(nextMode);
     setLoginError("");
+    setLoginNotice("");
   }
 
   async function submitLocalLogin(event) {
     event.preventDefault();
+    setLoginNotice("");
 
     const result = authMode === "signup"
       ? await createLocalAccount(loginDraft)
-      : await loginLocalAccount(loginDraft);
+      : authMode === "recover"
+        ? await requestPasswordReset(loginDraft.email)
+        : await loginLocalAccount(loginDraft);
 
     if (!result.ok) {
       setLoginError(result.message);
+      return;
+    }
+
+    if (authMode === "recover") {
+      setLoginNotice("Se o e-mail existir, voce recebera um link para redefinir sua senha.");
+      setAuthMode("signin");
       return;
     }
 
@@ -902,6 +947,7 @@ function App() {
     setAuthMode("signin");
     setLoginDraft({ name: "", email: "", password: "", confirmPassword: "", remember: true });
     setLoginError("");
+    setLoginNotice("");
   }
 
   async function clearTestData() {
@@ -970,6 +1016,54 @@ function App() {
     }));
     setEditingIncome(false);
     setIncomeDraft("");
+  }
+
+  function updateProfileDraft(field, value) {
+    setProfileDraft(current => ({ ...current, [field]: value }));
+    if (profileMessage.text) {
+      setProfileMessage({ type: "", text: "" });
+    }
+  }
+
+  async function handleUpdateName(event) {
+    event.preventDefault();
+    const newName = profileDraft.name.trim();
+    if (!newName) {
+      setProfileMessage({ type: "error", text: "O nome não pode ficar em branco." });
+      return;
+    }
+
+    const result = await updateUserAccount({ name: newName });
+    if (!result.ok) {
+      setProfileMessage({ type: "error", text: `Erro: ${result.message}` });
+      return;
+    }
+
+    setLocalUser(result.user);
+    setProfileMessage({ type: "success", text: "Nome atualizado com sucesso!" });
+  }
+
+  async function handleChangePassword(event) {
+    event.preventDefault();
+    const { newPassword, confirmNewPassword } = profileDraft;
+
+    if (!newPassword) {
+      setProfileMessage({ type: "error", text: "A nova senha não pode ficar em branco." });
+      return;
+    }
+    if (newPassword !== confirmNewPassword) {
+      setProfileMessage({ type: "error", text: "As senhas não conferem." });
+      return;
+    }
+
+    const result = await updateUserAccount({ password: newPassword });
+    if (!result.ok) {
+      setProfileMessage({ type: "error", text: `Erro: ${result.message}` });
+      return;
+    }
+
+    setProfileMessage({ type: "success", text: "Senha alterada com sucesso!" });
+    setProfileDraft(current => ({ ...current, newPassword: "", confirmNewPassword: "" }));
   }
 
   function renameAccountColumn(oldName, rawNextName) {
@@ -1222,6 +1316,7 @@ function App() {
         mode={authMode}
         draft={loginDraft}
         error={loginError}
+        notice={loginNotice}
         onBack={() => setAuthStep("welcome")}
         onChange={updateLoginDraft}
         onModeChange={changeAuthMode}
@@ -2053,21 +2148,82 @@ function App() {
                 </div>
               </div>
               
-              <div className="profile-settings-list" style={{ display: "flex", flexDirection: "column", gap: "2rem", marginTop: "2rem" }}>
-                <div className="setting-card" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid var(--border-color)", paddingBottom: "2rem" }}>
-                  <div className="setting-info">
-                    <strong>Exportar dados</strong>
-                    <p style={{ margin: "0.5rem 0 0 0", color: "var(--text-color-light)" }}>Baixe todos os seus lancamentos de {dashboardYear} em formato CSV para abrir no Excel.</p>
+              <div className="profile-settings-list">
+                {profileMessage.text && (
+                  <p className={`profile-message ${profileMessage.type === "error" ? "error" : "success"}`}>
+                    {profileMessage.text}
+                  </p>
+                )}
+
+                <fieldset className="profile-group">
+                  <legend className="profile-group-title">
+                    Dados da Conta
+                  </legend>
+                  
+                  <div className="setting-card">
+                    <div className="setting-info">
+                      <strong>Nome</strong>
+                      <p>Este e o nome que aparece na saudacao do app.</p>
+                    </div>
+                    <form className="setting-inline-form" onSubmit={handleUpdateName}>
+                      <input
+                        type="text"
+                        value={profileDraft.name}
+                        onChange={(e) => updateProfileDraft("name", e.target.value)}
+                        className="profile-input"
+                      />
+                      <button className="ghost-button" type="submit">Salvar</button>
+                    </form>
                   </div>
-                  <button className="ghost-button" type="button" onClick={exportDataToCSV}>Exportar CSV</button>
-                </div>
-                <div className="setting-card danger-zone" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <div className="setting-info">
-                    <strong>Zerar base de dados</strong>
-                    <p style={{ margin: "0.5rem 0 0 0", color: "var(--text-color-light)" }}>Apaga permanentemente todos os seus gastos, rendas e contas, deixando como novo.</p>
+
+                  <div className="setting-card">
+                    <div className="setting-info">
+                      <strong>E-mail de acesso</strong>
+                      <p>A alteracao de e-mail nao esta disponivel no momento.</p>
+                    </div>
+                    <span className="setting-static-value">{localUser.email}</span>
                   </div>
-                  <button className="danger-button" type="button" onClick={clearTestData}>Limpar tudo</button>
-                </div>
+                </fieldset>
+
+                <fieldset className="profile-group">
+                  <legend className="profile-group-title">
+                    Alterar senha
+                  </legend>
+                  <form onSubmit={handleChangePassword}>
+                    <div className="setting-card">
+                      <div className="setting-info">
+                        <p>Use uma senha forte para manter sua conta segura.</p>
+                      </div>
+                      <div className="setting-password-form">
+                        <div className="setting-password-grid">
+                          <input className="profile-input" type="password" placeholder="Nova senha" value={profileDraft.newPassword} onChange={(e) => updateProfileDraft("newPassword", e.target.value)} />
+                          <input className="profile-input" type="password" placeholder="Confirmar nova senha" value={profileDraft.confirmNewPassword} onChange={(e) => updateProfileDraft("confirmNewPassword", e.target.value)} />
+                        </div>
+                        <button className="ghost-button" type="submit">Alterar Senha</button>
+                      </div>
+                    </div>
+                  </form>
+                </fieldset>
+
+                <fieldset className="profile-group">
+                  <legend className="profile-group-title">
+                    Gerenciamento de Dados
+                  </legend>
+                  <div className="setting-card">
+                    <div className="setting-info">
+                      <strong>Exportar dados</strong>
+                      <p>Baixe todos os seus lancamentos de {dashboardYear} em formato CSV.</p>
+                    </div>
+                    <button className="ghost-button" type="button" onClick={exportDataToCSV}>Exportar CSV</button>
+                  </div>
+                  <div className="setting-card danger-zone">
+                    <div className="setting-info">
+                      <strong>Zerar base de dados</strong>
+                      <p>Apaga permanentemente todos os seus gastos, rendas e contas.</p>
+                    </div>
+                    <button className="danger-button" type="button" onClick={clearTestData}>Limpar tudo</button>
+                  </div>
+                </fieldset>
               </div>
             </article>
           </section>
@@ -2085,6 +2241,31 @@ function App() {
           </a>
         </footer>
       </section>
+
+      {pendingFixedDeletion && (
+        <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Confirmar exclusao de gasto fixo">
+          <div className="confirm-modal">
+            <div className="panel-heading compact">
+              <div>
+                <span className="eyebrow">Gasto fixo</span>
+                <h2>Como voce quer excluir?</h2>
+              </div>
+              <button className="icon-button" type="button" onClick={() => setPendingFixedDeletion(null)}>×</button>
+            </div>
+            <p className="confirm-modal-copy">
+              Escolha se deseja remover somente este lancamento ou apagar todos os lancamentos dessa serie fixa.
+            </p>
+            <div className="confirm-modal-actions">
+              <button className="ghost-button" type="button" onClick={confirmDeleteFixedSingle}>
+                Excluir somente este
+              </button>
+              <button className="danger-button" type="button" onClick={confirmDeleteFixedSeries}>
+                Excluir serie inteira
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {editingTransaction && (
         <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Editar lançamento">

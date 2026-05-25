@@ -56,8 +56,9 @@ export function WelcomeScreen({ onStart }) {
   );
 }
 
-export function LoginScreen({ mode, draft, error, onChange, onModeChange, onSubmit, onBack }) {
+export function LoginScreen({ mode, draft, error, notice, onChange, onModeChange, onSubmit, onBack }) {
   const isSignup = mode === "signup";
+  const isRecover = mode === "recover";
 
   return (
     <main className="auth-screen login-screen">
@@ -65,21 +66,28 @@ export function LoginScreen({ mode, draft, error, onChange, onModeChange, onSubm
         <BrandIdentity subtitle="" />
 
         <div className="login-copy">
-          <h1>{isSignup ? "Crie seu acesso financeiro." : "Entre no seu espaco financeiro."}</h1>
-          <p>Este acesso ainda e local neste navegador. A estrutura ja esta preparada para conectar ao banco de dados depois.</p>
+          <h1>{isSignup ? "Crie seu acesso financeiro." : isRecover ? "Recupere sua senha." : "Entre no seu espaco financeiro."}</h1>
+          <p>
+            {isRecover
+              ? "Informe o e-mail da conta para enviarmos o link de redefinicao."
+              : "Este acesso ainda e local neste navegador. A estrutura ja esta preparada para conectar ao banco de dados depois."}
+          </p>
         </div>
 
         <div className="auth-mode-tabs" aria-label="Modo de acesso">
-          <button className={!isSignup ? "active" : ""} type="button" onClick={() => onModeChange("signin")}>
+          <button className={!isSignup && !isRecover ? "active" : ""} type="button" onClick={() => onModeChange("signin")}>
             Entrar
           </button>
           <button className={isSignup ? "active" : ""} type="button" onClick={() => onModeChange("signup")}>
             Criar conta
           </button>
+          <button className={isRecover ? "active" : ""} type="button" onClick={() => onModeChange("recover")}>
+            Recuperar
+          </button>
         </div>
 
         <form className="login-form" onSubmit={onSubmit}>
-          {isSignup && (
+          {isSignup && !isRecover && (
             <label>
               Nome
               <input
@@ -100,16 +108,18 @@ export function LoginScreen({ mode, draft, error, onChange, onModeChange, onSubm
               placeholder="voce@email.com"
             />
           </label>
-          <label>
-            Senha
-            <input
-              type="password"
-              value={draft.password}
-              onChange={(event) => onChange("password", event.target.value)}
-              placeholder="Senha local"
-            />
-          </label>
-          {isSignup && (
+          {!isRecover && (
+            <label>
+              Senha
+              <input
+                type="password"
+                value={draft.password}
+                onChange={(event) => onChange("password", event.target.value)}
+                placeholder="Senha local"
+              />
+            </label>
+          )}
+          {isSignup && !isRecover && (
             <label>
               Confirmar senha
               <input
@@ -121,19 +131,24 @@ export function LoginScreen({ mode, draft, error, onChange, onModeChange, onSubm
             </label>
           )}
 
-          <label className="remember-access">
-            <input
-              type="checkbox"
-              checked={draft.remember}
-              onChange={(event) => onChange("remember", event.target.checked)}
-            />
-            Manter conectado neste navegador
-          </label>
+          {!isRecover && (
+            <label className="remember-access">
+              <input
+                type="checkbox"
+                checked={draft.remember}
+                onChange={(event) => onChange("remember", event.target.checked)}
+              />
+              Manter conectado neste navegador
+            </label>
+          )}
 
+          {notice && <p className="form-note">{notice}</p>}
           {error && <p className="form-error">{error}</p>}
 
           <div className="login-actions">
-            <button className="primary-button" type="submit">{isSignup ? "Criar conta" : "Entrar"}</button>
+            <button className="primary-button" type="submit">
+              {isSignup ? "Criar conta" : isRecover ? "Enviar link" : "Entrar"}
+            </button>
             <button className="ghost-button" type="button" onClick={onBack}>Voltar</button>
           </div>
         </form>
