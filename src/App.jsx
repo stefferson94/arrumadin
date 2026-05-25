@@ -1339,9 +1339,6 @@ function App() {
             <button className="primary-button add-expense-button" type="button" onClick={focusQuickEntry}>
               <span>Novo gasto</span>
             </button>
-            <button className="danger-button clear-data-button" type="button" onClick={clearTestData}>
-              <span>Limpar base</span>
-            </button>
             <button className="ghost-button configure-year-button" type="button" onClick={openYearSetup}>
               <span>Alterar ano</span>
             </button>
