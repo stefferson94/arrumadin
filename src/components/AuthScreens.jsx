@@ -56,7 +56,7 @@ export function WelcomeScreen({ onStart }) {
   );
 }
 
-export function LoginScreen({ mode, draft, error, onChange, onModeChange, onSubmit, onBack, onQuickAccess }) {
+export function LoginScreen({ mode, draft, error, onChange, onModeChange, onSubmit, onBack }) {
   const isSignup = mode === "signup";
 
   return (
@@ -137,15 +137,6 @@ export function LoginScreen({ mode, draft, error, onChange, onModeChange, onSubm
             <button className="ghost-button" type="button" onClick={onBack}>Voltar</button>
           </div>
         </form>
-
-        {onQuickAccess && !isSignup && (
-          <div className="quick-access-section">
-            <button className="quick-access-button" type="button" onClick={onQuickAccess}>
-              <span className="quick-access-icon" aria-hidden="true">⚡</span>
-              Acesso rápido (demo)
-            </button>
-          </div>
-        )}
       </section>
     </main>
   );

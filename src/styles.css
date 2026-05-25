@@ -2061,7 +2061,7 @@ form {
 .quick-entry .type-selector,
 .quick-entry .creation-note,
 .quick-entry .form-error,
-.quick-entry .storage-note {
+.quick-entry {
   grid-column: 1 / -1;
 }
 
@@ -2646,11 +2646,6 @@ label {
   background: #f8e9e4;
   font-size: 1.3rem;
   line-height: 1;
-}
-
-.storage-note {
-  color: #7b837e;
-  line-height: 1.4;
 }
 
 .creation-note {

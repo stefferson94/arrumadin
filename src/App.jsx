@@ -38,38 +38,15 @@ import {
   normalizeLedgerType,
   parseInstallmentDescription
 } from "./domain/transactions.js";
+import { getExpenses, saveExpenses, updateExpense, deleteExpense, deleteAllExpenses } from "./services/expenses.js";
+import { getSettings, saveSettings } from "./services/settings.js";
+import { getIncomes, saveIncome, deleteAllIncomes } from "./services/incomes.js";
 import {
   createLocalAccount,
   getCurrentSession,
   loginLocalAccount,
   logoutLocalAccount
 } from "./services/auth.js";
-import {
-  canUseExpenseStorage,
-  DATA_RESET_VERSION,
-  ensureDataReset,
-  persistExpenses
-} from "./services/storage.js";
-
-function getDefaultActiveMonthId() {
-  const currentMonthId = getCurrentMonthId();
-
-  try {
-    const savedMonthId = localStorage.getItem("balanco-financeiro:mes-ativo");
-    return isValidMonthId(savedMonthId) ? savedMonthId : currentMonthId;
-  } catch {
-    return currentMonthId;
-  }
-}
-
-function getDefaultActiveView() {
-  try {
-    const savedView = localStorage.getItem("balanco-financeiro:menu-ativo");
-    return navigationItemIds.includes(savedView) ? savedView : defaultActiveView;
-  } catch {
-    return defaultActiveView;
-  }
-}
 
 function isValidMonthId(monthId) {
   return /^\d{4}-(0[1-9]|1[0-2])$/.test(String(monthId));
@@ -90,8 +67,8 @@ function Icon({ children }) {
 }
 
 function App() {
-  const [localUser, setLocalUser] = useState(getCurrentSession);
-  const [authStep, setAuthStep] = useState(() => (getCurrentSession() ? "app" : "welcome"));
+  const [localUser, setLocalUser] = useState(null);
+  const [authStep, setAuthStep] = useState("loading");
   const [authMode, setAuthMode] = useState("signin");
   const [loginDraft, setLoginDraft] = useState({
     name: "",
@@ -102,10 +79,10 @@ function App() {
   });
   const [loginError, setLoginError] = useState("");
   const [isYearPickerOpen, setIsYearPickerOpen] = useState(false);
-  const [yearPickerDraft, setYearPickerDraft] = useState(String(getMonthYear(getDefaultActiveMonthId())));
+  const [yearPickerDraft, setYearPickerDraft] = useState(String(getMonthYear(getCurrentMonthId())));
   const [yearPickerError, setYearPickerError] = useState("");
-  const [activeView, setActiveView] = useState(getDefaultActiveView);
-  const [activeMonthId, setActiveMonthId] = useState(getDefaultActiveMonthId);
+  const [activeView, setActiveView] = useState(defaultActiveView);
+  const [activeMonthId, setActiveMonthId] = useState(getCurrentMonthId());
   const [lastCreatedCount, setLastCreatedCount] = useState(0);
   const [lastCreatedType, setLastCreatedType] = useState("");
   const [editingTransaction, setEditingTransaction] = useState(null);
@@ -123,58 +100,13 @@ function App() {
   const [isMobileLedger, setIsMobileLedger] = useState(() =>
     typeof window === "undefined" ? false : window.matchMedia("(max-width: 1024px)").matches
   );
-  const [savedExpenses, setSavedExpenses] = useState(() => {
-    try {
-      ensureDataReset();
-      return JSON.parse(localStorage.getItem("balanco-financeiro:gastos")) ?? [];
-    } catch {
-      return [];
-    }
-  });
-  const [movedColumns, setMovedColumns] = useState(() => {
-    try {
-      ensureDataReset();
-      return JSON.parse(localStorage.getItem("balanco-financeiro:colunas-movidas")) ?? {};
-    } catch {
-      return {};
-    }
-  });
-  const [ledgerOverrides, setLedgerOverrides] = useState(() => {
-    try {
-      ensureDataReset();
-      return JSON.parse(localStorage.getItem("balanco-financeiro:ajustes-lancamentos")) ?? {};
-    } catch {
-      return {};
-    }
-  });
-  const [accountColumns, setAccountColumns] = useState(() => {
-    try {
-      return JSON.parse(localStorage.getItem("balanco-financeiro:colunas-contas")) ?? spreadsheetColumns;
-    } catch {
-      return spreadsheetColumns;
-    }
-  });
-  const [accountColors, setAccountColors] = useState(() => {
-    try {
-      return JSON.parse(localStorage.getItem("balanco-financeiro:cores-contas")) ?? {};
-    } catch {
-      return {};
-    }
-  });
-  const [accountTypes, setAccountTypes] = useState(() => {
-    try {
-      return JSON.parse(localStorage.getItem("balanco-financeiro:tipos-contas")) ?? {};
-    } catch {
-      return {};
-    }
-  });
-  const [monthlyIncome, setMonthlyIncome] = useState(() => {
-    try {
-      return JSON.parse(localStorage.getItem("balanco-financeiro:rendimentos")) ?? {};
-    } catch {
-      return {};
-    }
-  });
+  const [savedExpenses, setSavedExpenses] = useState([]);
+  const [movedColumns, setMovedColumns] = useState({});
+  const [ledgerOverrides, setLedgerOverrides] = useState({});
+  const [accountColumns, setAccountColumns] = useState(spreadsheetColumns);
+  const [accountColors, setAccountColors] = useState({});
+  const [accountTypes, setAccountTypes] = useState({});
+  const [monthlyIncome, setMonthlyIncome] = useState({});
   const [form, setForm] = useState({
     type: "single",
     description: "",
@@ -483,6 +415,38 @@ function App() {
     return totals.filter((account) => account.count > 0 || account.amount > 0).sort((a, b) => b.amount - a.amount);
   }, [accountColumns, accountTypes, reportYearTransactions]);
 
+  useEffect(() => {
+    getCurrentSession().then(user => {
+      setLocalUser(user);
+      if (!user) setAuthStep("welcome");
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!localUser) return;
+    
+    Promise.all([getSettings(), getExpenses(), getIncomes()]).then(([settings, expenses, incomes]) => {
+      if (settings) {
+        if (settings.activeView) setActiveView(settings.activeView);
+        if (settings.activeMonthId) setActiveMonthId(settings.activeMonthId);
+        if (settings.movedColumns) setMovedColumns(settings.movedColumns);
+        if (settings.ledgerOverrides) setLedgerOverrides(settings.ledgerOverrides);
+        if (settings.accountColumns) setAccountColumns(settings.accountColumns);
+        if (settings.accountColors) setAccountColors(settings.accountColors);
+        if (settings.accountTypes) setAccountTypes(settings.accountTypes);
+      }
+      
+      if (incomes && incomes.length > 0) {
+        const incomesMap = {};
+        incomes.forEach((inc) => { incomesMap[inc.month_id] = inc.amount; });
+        setMonthlyIncome(incomesMap);
+      }
+
+      setSavedExpenses(expenses);
+      setAuthStep("app");
+    });
+  }, [localUser]);
+
   const reportTypeTotals = useMemo(() => {
     const labels = {
       single: "Avulsos",
@@ -516,10 +480,6 @@ function App() {
   );
 
   useEffect(() => {
-    persistExpenses(savedExpenses);
-  }, [savedExpenses]);
-
-  useEffect(() => {
     const completedExpenses = completeMissingInstallments(savedExpenses);
     if (completedExpenses.length !== savedExpenses.length) {
       setSavedExpenses(completedExpenses);
@@ -527,36 +487,21 @@ function App() {
   }, [savedExpenses]);
 
   useEffect(() => {
-    localStorage.setItem("balanco-financeiro:colunas-movidas", JSON.stringify(movedColumns));
-  }, [movedColumns]);
-
-  useEffect(() => {
-    localStorage.setItem("balanco-financeiro:ajustes-lancamentos", JSON.stringify(ledgerOverrides));
-  }, [ledgerOverrides]);
-
-  useEffect(() => {
-    localStorage.setItem("balanco-financeiro:colunas-contas", JSON.stringify(accountColumns));
-  }, [accountColumns]);
-
-  useEffect(() => {
-    localStorage.setItem("balanco-financeiro:cores-contas", JSON.stringify(accountColors));
-  }, [accountColors]);
-
-  useEffect(() => {
-    localStorage.setItem("balanco-financeiro:tipos-contas", JSON.stringify(accountTypes));
-  }, [accountTypes]);
-
-  useEffect(() => {
-    localStorage.setItem("balanco-financeiro:rendimentos", JSON.stringify(monthlyIncome));
-  }, [monthlyIncome]);
-
-  useEffect(() => {
-    localStorage.setItem("balanco-financeiro:mes-ativo", activeMonth.id);
-  }, [activeMonth.id]);
-
-  useEffect(() => {
-    localStorage.setItem("balanco-financeiro:menu-ativo", activeView);
-  }, [activeView]);
+    if (authStep !== "app") return; // Só envia se a tela do app estiver carregada e pronta
+    
+    const timer = setTimeout(() => {
+      saveSettings({
+        activeView,
+        activeMonthId,
+        movedColumns,
+        ledgerOverrides,
+        accountColumns,
+        accountColors,
+        accountTypes
+      });
+    }, 1000); // 1 segundo de "descanso" antes de enviar para o banco
+    return () => clearTimeout(timer);
+  }, [activeView, activeMonthId, movedColumns, ledgerOverrides, accountColumns, accountColors, accountTypes, authStep]);
 
   useEffect(() => {
     const mediaQuery = window.matchMedia("(max-width: 1024px)");
@@ -591,7 +536,7 @@ function App() {
     }
   }
 
-  function handleAddExpense(event) {
+  async function handleAddExpense(event) {
     event?.preventDefault?.();
 
     const parsedAmount = parseCurrencyInput(form.amount);
@@ -619,16 +564,14 @@ function App() {
     };
     const generatedExpenses = buildExpensesFromForm({ form: formToSave, activeMonth, amount });
 
-    if (!canUseExpenseStorage(setFormError)) {
+    const result = await saveExpenses(generatedExpenses);
+    if (result.error || !result.data) {
+      setFormError("Erro do banco: " + (result.error || "Desconhecido"));
       return;
     }
 
-    setSavedExpenses((current) => {
-      const nextExpenses = [...generatedExpenses, ...current];
-      persistExpenses(nextExpenses);
-      return nextExpenses;
-    });
-    setLastCreatedCount(generatedExpenses.length);
+    setSavedExpenses((current) => [...result.data, ...current]);
+    setLastCreatedCount(result.data.length);
     setLastCreatedType(formToSave.type);
     setFormError("");
     setForm((current) => ({
@@ -668,6 +611,7 @@ function App() {
   }
 
   function focusQuickEntry() {
+    clearCreationFeedback();
     setActiveView("lancamentos");
     window.setTimeout(() => {
       quickEntryRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -675,7 +619,13 @@ function App() {
     }, 0);
   }
 
-  function removeExpense(expenseId) {
+  async function removeExpense(expenseId) {
+    const success = await deleteExpense(expenseId);
+    if (!success) {
+      window.alert("Erro ao excluir o gasto do banco de dados.");
+      return;
+    }
+
     setSavedExpenses((current) => current.filter((expense) => expense.id !== expenseId));
     setMovedColumns((current) => {
       const next = { ...current };
@@ -689,15 +639,15 @@ function App() {
     });
   }
 
-  function deleteTransaction(transaction) {
+  async function deleteTransaction(transaction) {
     clearCreationFeedback();
     if (transaction.ledgerType === "installment") {
-      deleteInstallmentSeries(transaction);
+      await deleteInstallmentSeries(transaction);
       return;
     }
 
     if (transaction.ledgerType === "fixed") {
-      deleteFixedSeries(transaction);
+      await deleteFixedSeries(transaction);
       return;
     }
 
@@ -756,19 +706,22 @@ function App() {
     });
   }
 
-  function deleteFixedSeries(transaction) {
-    setSavedExpenses((current) =>
-      current.filter((expense) => {
-        if (transaction.seriesId && expense.seriesId === transaction.seriesId) return false;
-        return !(
-          expense.type === "fixed" &&
-          expense.description === transaction.description &&
-          expense.card === transaction.card &&
-          expense.amount === transaction.amount
-        );
-      })
-    );
+  async function deleteFixedSeries(transaction) {
+    const toDeleteIds = savedExpenses.filter((expense) => {
+      if (transaction.seriesId && expense.seriesId === transaction.seriesId) return true;
+      return (
+        expense.type === "fixed" &&
+        expense.description === transaction.description &&
+        expense.card === transaction.card &&
+        expense.amount === transaction.amount
+      );
+    }).map(e => e.id);
 
+    for (const id of toDeleteIds) {
+      await deleteExpense(id);
+    }
+
+    setSavedExpenses((current) => current.filter((expense) => !toDeleteIds.includes(expense.id)));
     setLedgerOverrides((current) => {
       const next = { ...current };
 
@@ -820,7 +773,7 @@ function App() {
     setEditingTransaction((current) => ({ ...current, [field]: value }));
   }
 
-  function saveEditedTransaction(event) {
+  async function saveEditedTransaction(event) {
     event.preventDefault();
     if (!editingTransaction) return;
 
@@ -830,24 +783,31 @@ function App() {
 
     if (editingTransaction.dragId.startsWith("saved:")) {
       const expenseId = editingTransaction.dragId.replace("saved:", "");
+      
+      const updatedData = {
+        description: editingTransaction.description.trim(),
+        amount,
+        card: editingTransaction.card,
+        type: editingTransaction.type,
+        monthId: editingTransaction.source.monthId,
+        installments: editingTransaction.type === "installment"
+          ? clampInteger(editingTransaction.installments, 1, 48)
+          : null,
+        installmentNumber: editingTransaction.type === "installment"
+          ? clampInteger(editingTransaction.startInstallment, 1, clampInteger(editingTransaction.installments, 1, 48))
+          : null,
+        seriesId: editingTransaction.source.seriesId
+      };
+
+      const result = await updateExpense(expenseId, updatedData);
+      if (result.error) {
+        window.alert("Erro ao salvar edição: " + result.error);
+        return;
+      }
+
       setSavedExpenses((current) =>
         current.map((expense) =>
-          expense.id === expenseId
-            ? {
-                ...expense,
-                type: editingTransaction.type,
-                description: editingTransaction.description.trim(),
-                amount,
-                card: editingTransaction.card,
-                group: editingTransaction.card,
-                installmentNumber: editingTransaction.type === "installment"
-                  ? clampInteger(editingTransaction.startInstallment, 1, clampInteger(editingTransaction.installments, 1, 48))
-                  : undefined,
-                installments: editingTransaction.type === "installment"
-                  ? clampInteger(editingTransaction.installments, 1, 48)
-                  : undefined
-              }
-            : expense
+          expense.id === expenseId ? { ...expense, ...result.data } : expense
         )
       );
     } else {
@@ -928,12 +888,12 @@ function App() {
     setLoginError("");
   }
 
-  function submitLocalLogin(event) {
+  async function submitLocalLogin(event) {
     event.preventDefault();
 
     const result = authMode === "signup"
-      ? createLocalAccount(loginDraft)
-      : loginLocalAccount(loginDraft);
+      ? await createLocalAccount(loginDraft)
+      : await loginLocalAccount(loginDraft);
 
     if (!result.ok) {
       setLoginError(result.message);
@@ -944,8 +904,8 @@ function App() {
     setAuthStep("app");
   }
 
-  function logoutLocalUser() {
-    logoutLocalAccount();
+  async function logoutLocalUser() {
+    await logoutLocalAccount();
     setLocalUser(null);
     setAuthStep("login");
     setAuthMode("signin");
@@ -953,30 +913,13 @@ function App() {
     setLoginError("");
   }
 
-  function quickAccessApp() {
-    const result = loginLocalAccount({ email: "admin@admin.com", password: "admin", remember: true });
-    if (!result.ok) {
-      setLoginError(result.message);
-      return;
-    }
-    setLocalUser(result.user);
-    setAuthStep("app");
-  }
-
-  function clearTestData() {
-    const confirmed = window.confirm("Limpar todos os gastos, ajustes e movimentacoes salvos neste navegador?");
+  async function clearTestData() {
+    const confirmed = window.confirm("Limpar todos os gastos e configurações da sua conta?");
     if (!confirmed) return;
 
-    localStorage.removeItem("balanco-financeiro:gastos");
-    localStorage.removeItem("balanco-financeiro:colunas-movidas");
-    localStorage.removeItem("balanco-financeiro:ajustes-lancamentos");
-    localStorage.removeItem("balanco-financeiro:rendimentos");
-    localStorage.removeItem("balanco-financeiro:colunas-contas");
-    localStorage.removeItem("balanco-financeiro:cores-contas");
-    localStorage.removeItem("balanco-financeiro:tipos-contas");
-    localStorage.removeItem("balanco-financeiro:mes-ativo");
-    localStorage.removeItem("balanco-financeiro:ano-inicial");
-    localStorage.setItem("balanco-financeiro:reset-version", DATA_RESET_VERSION);
+    await deleteAllExpenses();
+    await deleteAllIncomes();
+    await saveSettings({});
 
     setSavedExpenses([]);
     setMovedColumns({});
@@ -985,12 +928,31 @@ function App() {
     setAccountColumns(spreadsheetColumns);
     setAccountColors({});
     setAccountTypes({});
-    setActiveMonthId(getDefaultActiveMonthId());
+    setActiveMonthId(getCurrentMonthId());
     setLastCreatedCount(0);
     setLastCreatedType("");
     setEditingTransaction(null);
     setEditingIncome(false);
     setIncomeDraft("");
+  }
+
+  function exportDataToCSV() {
+    const headers = ["Mes", "Descricao", "Conta", "Categoria", "Valor"];
+    const rows = reportYearTransactions.map(t => [
+      t.monthId,
+      `"${t.description}"`,
+      `"${t.card}"`,
+      `"${normalizeCategory(t.group)}"`,
+      t.amount
+    ]);
+    const csvContent = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows.map(e => e.join(","))].join("\n");
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `arrumadin_exportacao_${dashboardYear}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   }
 
   function startEditingIncome() {
@@ -1000,7 +962,7 @@ function App() {
     setEditingIncome(true);
   }
 
-  function saveMonthlyIncome(event) {
+  async function saveMonthlyIncome(event) {
     event?.preventDefault?.();
     const parsedValue = Number.parseFloat(incomeDraft.replace(",", "."));
     if (Number.isNaN(parsedValue)) {
@@ -1008,6 +970,8 @@ function App() {
       setEditingIncome(false);
       return;
     }
+
+    await saveIncome(activeMonth.id, parsedValue);
 
     setMonthlyIncome((current) => ({
       ...current,
@@ -1249,6 +1213,14 @@ function App() {
     );
   }
 
+  if (authStep === "loading") {
+    return (
+      <div style={{ height: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <p>Carregando...</p>
+      </div>
+    );
+  }
+
   if (!localUser && authStep === "welcome") {
     return <WelcomeScreen onStart={() => setAuthStep("login")} />;
   }
@@ -1263,7 +1235,6 @@ function App() {
         onChange={updateLoginDraft}
         onModeChange={changeAuthMode}
         onSubmit={submitLocalLogin}
-        onQuickAccess={quickAccessApp}
       />
     );
   }
@@ -1294,11 +1265,24 @@ function App() {
               className={`nav-item ${activeView === item.id ? "active" : ""}`}
               key={item.id}
               type="button"
-              onClick={() => setActiveView(item.id)}
+              onClick={() => {
+                clearCreationFeedback();
+                setActiveView(item.id);
+              }}
             >
               <Icon>{item.icon}</Icon> {item.label}
             </button>
           ))}
+          <button
+            className={`nav-item ${activeView === "perfil" ? "active" : ""}`}
+            type="button"
+            onClick={() => {
+              clearCreationFeedback();
+              setActiveView("perfil");
+            }}
+          >
+            <Icon>⚙</Icon> Minha Conta
+          </button>
           <button className="nav-item logout-button" type="button" onClick={logoutLocalUser}>
             <Icon>↩</Icon> Sair
           </button>
@@ -1671,7 +1655,6 @@ function App() {
                       {creationMessage(lastCreatedType, lastCreatedCount)}
                     </small>
                   )}
-                  <small className="storage-note">Salvo neste navegador em localStorage.</small>
                 </form>
               </aside>
             </section>
@@ -2072,6 +2055,36 @@ function App() {
                 </div>
               </article>
             </section>
+          </section>
+        )}
+
+        {activeView === "perfil" && (
+          <section className="profile-view" aria-label="Minha conta">
+            <article className="panel">
+              <div className="panel-heading">
+                <div>
+                  <span className="eyebrow">Sua Conta</span>
+                  <h2>Ajustes e Privacidade</h2>
+                </div>
+              </div>
+              
+              <div className="profile-settings-list" style={{ display: "flex", flexDirection: "column", gap: "2rem", marginTop: "2rem" }}>
+                <div className="setting-card" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid var(--border-color)", paddingBottom: "2rem" }}>
+                  <div className="setting-info">
+                    <strong>Exportar dados</strong>
+                    <p style={{ margin: "0.5rem 0 0 0", color: "var(--text-color-light)" }}>Baixe todos os seus lancamentos de {dashboardYear} em formato CSV para abrir no Excel.</p>
+                  </div>
+                  <button className="ghost-button" type="button" onClick={exportDataToCSV}>Exportar CSV</button>
+                </div>
+                <div className="setting-card danger-zone" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div className="setting-info">
+                    <strong>Zerar base de dados</strong>
+                    <p style={{ margin: "0.5rem 0 0 0", color: "var(--text-color-light)" }}>Apaga permanentemente todos os seus gastos, rendas e contas, deixando como novo.</p>
+                  </div>
+                  <button className="danger-button" type="button" onClick={clearTestData}>Limpar tudo</button>
+                </div>
+              </div>
+            </article>
           </section>
         )}
 
