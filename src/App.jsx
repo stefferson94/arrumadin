@@ -101,6 +101,7 @@ function App() {
   const [profileMessage, setProfileMessage] = useState({ type: "", text: "" });
   const [pendingFixedDeletion, setPendingFixedDeletion] = useState(null);
   const [dbPendingCount, setDbPendingCount] = useState(0);
+  const [isAnimationEnabled, setIsAnimationEnabled] = useState(true);
   const quickEntryRef = useRef(null);
   const newColumnInputRef = useRef(null);
   const [formError, setFormError] = useState("");
@@ -443,6 +444,7 @@ function App() {
         if (settings.accountColumns) setAccountColumns(settings.accountColumns);
         if (settings.accountColors) setAccountColors(settings.accountColors);
         if (settings.accountTypes) setAccountTypes(settings.accountTypes);
+        if (settings.isAnimationEnabled !== undefined) setIsAnimationEnabled(settings.isAnimationEnabled);
       }
       
       if (incomes && incomes.length > 0) {
@@ -518,11 +520,12 @@ function App() {
         ledgerOverrides,
         accountColumns,
         accountColors,
-        accountTypes
+        accountTypes,
+        isAnimationEnabled
       });
     }, 1000); // 1 segundo de "descanso" antes de enviar para o banco
     return () => clearTimeout(timer);
-  }, [activeView, activeMonthId, movedColumns, ledgerOverrides, accountColumns, accountColors, accountTypes, authStep]);
+  }, [activeView, activeMonthId, movedColumns, ledgerOverrides, accountColumns, accountColors, accountTypes, isAnimationEnabled, authStep]);
 
   useEffect(() => {
     const mediaQuery = window.matchMedia("(max-width: 1024px)");
@@ -1635,7 +1638,7 @@ function App() {
           </section>
         </header>
 
-        <div className={`sidebar-panel spending-timeline ${isOverBudget ? "panel-alert-animated" : ""}`}>
+        <div className={`sidebar-panel spending-timeline ${isOverBudget && isAnimationEnabled ? "panel-alert-animated" : ""}`}>
           <div className="timeline-header">
             <span>Histórico de gastos</span>
             <strong>{spendingStatus}</strong>
@@ -2389,6 +2392,27 @@ function App() {
                       <p>A alteracao de e-mail nao esta disponivel no momento.</p>
                     </div>
                     <span className="setting-static-value">{localUser.email}</span>
+                  </div>
+                </fieldset>
+
+                <fieldset className="profile-group">
+                  <legend className="profile-group-title">
+                    Preferências
+                  </legend>
+                  <div className="setting-card">
+                    <div className="setting-info">
+                      <strong>Animações de alerta</strong>
+                      <p>Destacar os gastos com o contorno em movimento quando você ultrapassar o limite do mês.</p>
+                    </div>
+                    <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer", fontWeight: "500" }}>
+                      <input
+                        type="checkbox"
+                        checked={isAnimationEnabled}
+                        onChange={(e) => setIsAnimationEnabled(e.target.checked)}
+                        style={{ width: "1.1rem", height: "1.1rem", accentColor: "var(--primary-color, #1f4d74)" }}
+                      />
+                      Ativado
+                    </label>
                   </div>
                 </fieldset>
 
