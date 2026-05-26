@@ -52,6 +52,17 @@ export function WelcomeScreen({ onStart }) {
           </div>
         </div>
       </section>
+      <footer className="app-footer" style={{ marginTop: "auto", textAlign: "center", padding: "1.5rem", opacity: 0.8, fontSize: "0.85rem", display: "flex", flexDirection: "column", alignItems: "center", gap: "0.5rem" }}>
+        <span>© 2026 Stefferson Luz Silva. Todos os direitos reservados.</span>
+        <a href="https://instagram.com/steffersonluz" target="_blank" rel="noopener noreferrer" className="instagram-link" style={{ display: "inline-flex", alignItems: "center", gap: "0.3rem", color: "inherit", textDecoration: "none" }}>
+          <svg className="instagram-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <rect x="2" y="2" width="20" height="20" rx="5" ry="5"/>
+            <circle cx="12" cy="12" r="5"/>
+            <circle cx="17.5" cy="6.5" r="1.5"/>
+          </svg>
+          steffersonluz
+        </a>
+      </footer>
     </main>
   );
 }
@@ -62,20 +73,16 @@ export function LoginScreen({ mode, draft, error, notice, onChange, onModeChange
 
   return (
     <main className="auth-screen login-screen">
-      <section className="login-panel" aria-label="Acesso da conta">
+      <section className="login-panel" aria-label="Login local">
         <BrandIdentity subtitle="" />
 
         <div className="login-copy">
-          <h1>{isSignup ? "Crie seu acesso financeiro." : isRecover ? "Recupere sua senha." : "Entre no seu espaco financeiro."}</h1>
-          <p>
-            {isRecover
-              ? "Informe o e-mail da conta para enviarmos o link de redefinicao."
-              : "Acesse sua conta na nuvem com seguranca e sincronizacao entre dispositivos."}
-          </p>
+          <h1>{isRecover ? "Recupere sua senha." : isSignup ? "Crie seu acesso financeiro." : "Entre no seu espaco financeiro."}</h1>
+          <p>{isRecover ? "Informe seu e-mail abaixo para receber um link de redefinicao." : "Acesse sua conta para visualizar e gerenciar seus lancamentos na nuvem."}</p>
         </div>
 
         <div className="auth-mode-tabs" aria-label="Modo de acesso">
-          <button className={!isSignup && !isRecover ? "active" : ""} type="button" onClick={() => onModeChange("signin")}>
+          <button className={mode === "signin" ? "active" : ""} type="button" onClick={() => onModeChange("signin")}>
             Entrar
           </button>
           <button className={isSignup ? "active" : ""} type="button" onClick={() => onModeChange("signup")}>
@@ -87,7 +94,7 @@ export function LoginScreen({ mode, draft, error, notice, onChange, onModeChange
         </div>
 
         <form className="login-form" onSubmit={onSubmit}>
-          {isSignup && !isRecover && (
+          {isSignup && (
             <label>
               Nome
               <input
@@ -108,6 +115,11 @@ export function LoginScreen({ mode, draft, error, notice, onChange, onModeChange
               placeholder="voce@email.com"
             />
           </label>
+          {isRecover && (
+            <p style={{ fontSize: "0.85rem", color: "var(--text-color-light)", marginTop: "-0.5rem", marginBottom: "0.5rem", lineHeight: 1.4 }}>
+              Um e-mail com um link seguro sera enviado para voce redefinir sua senha. Verifique tambem sua caixa de spam.
+            </p>
+          )}
           {!isRecover && (
             <label>
               Senha
@@ -115,11 +127,11 @@ export function LoginScreen({ mode, draft, error, notice, onChange, onModeChange
                 type="password"
                 value={draft.password}
                 onChange={(event) => onChange("password", event.target.value)}
-                placeholder="Sua senha"
+                placeholder="Sua senha secreta"
               />
             </label>
           )}
-          {isSignup && !isRecover && (
+          {isSignup && (
             <label>
               Confirmar senha
               <input
@@ -131,28 +143,37 @@ export function LoginScreen({ mode, draft, error, notice, onChange, onModeChange
             </label>
           )}
 
-          {!isRecover && (
-            <label className="remember-access">
-              <input
-                type="checkbox"
-                checked={draft.remember}
-                onChange={(event) => onChange("remember", event.target.checked)}
-              />
-              Manter conectado
-            </label>
-          )}
+        {!isRecover && (
+          <label className="remember-access">
+            <input
+              type="checkbox"
+              checked={draft.remember}
+              onChange={(event) => onChange("remember", event.target.checked)}
+            />
+            Manter conectado neste navegador
+          </label>
+        )}
 
-          {notice && <p className="form-note">{notice}</p>}
-          {error && <p className="form-error">{error}</p>}
+        {error && <p className="form-error" style={{ animation: "smooth-fade-in 0.3s ease-out forwards" }}>{error}</p>}
+        {notice && <p className="form-notice" style={{ color: "var(--positive-color)", fontSize: "0.9rem", marginTop: "0.5rem", textAlign: "center", animation: "smooth-fade-in 0.3s ease-out forwards" }}>{notice}</p>}
 
           <div className="login-actions">
-            <button className="primary-button" type="submit">
-              {isSignup ? "Criar conta" : isRecover ? "Enviar link" : "Entrar"}
-            </button>
-            <button className="ghost-button" type="button" onClick={onBack}>Voltar</button>
+          <button className="primary-button" type="submit">{isRecover ? "Enviar link" : isSignup ? "Criar conta" : "Entrar"}</button>
+          <button className="ghost-button" type="button" onClick={isRecover ? () => onModeChange("signin") : onBack}>Voltar</button>
           </div>
         </form>
       </section>
+      <footer className="app-footer" style={{ marginTop: "auto", textAlign: "center", padding: "1.5rem", opacity: 0.8, fontSize: "0.85rem", display: "flex", flexDirection: "column", alignItems: "center", gap: "0.5rem" }}>
+        <span>© 2026 Stefferson Luz Silva. Todos os direitos reservados.</span>
+        <a href="https://instagram.com/steffersonluz" target="_blank" rel="noopener noreferrer" className="instagram-link" style={{ display: "inline-flex", alignItems: "center", gap: "0.3rem", color: "inherit", textDecoration: "none" }}>
+          <svg className="instagram-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <rect x="2" y="2" width="20" height="20" rx="5" ry="5"/>
+            <circle cx="12" cy="12" r="5"/>
+            <circle cx="17.5" cy="6.5" r="1.5"/>
+          </svg>
+          steffersonluz
+        </a>
+      </footer>
     </main>
   );
 }

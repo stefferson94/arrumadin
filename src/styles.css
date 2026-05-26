@@ -2865,6 +2865,45 @@ label {
   line-height: 1.35;
 }
 
+.db-loading-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 110;
+  display: grid;
+  place-items: center;
+  background: rgba(18, 29, 40, 0.28);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+}
+
+.db-loading-card {
+  min-width: 220px;
+  min-height: 96px;
+  border-radius: 14px;
+  border: 1px solid rgba(45, 95, 139, 0.2);
+  background: #ffffff;
+  box-shadow: 0 16px 30px rgba(31, 77, 116, 0.16);
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  gap: 10px;
+  padding: 16px;
+}
+
+.db-loading-card strong {
+  color: #1f4d74;
+  font-size: 0.86rem;
+}
+
+.db-loading-spinner {
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  border: 2px solid rgba(45, 95, 139, 0.22);
+  border-top-color: #2d5f8b;
+  animation: db-spin 700ms linear infinite;
+}
+
 .modal-backdrop {
   position: fixed;
   inset: 0;
@@ -2929,6 +2968,16 @@ label {
   to {
     transform: scaleY(1);
     opacity: 1;
+  }
+}
+
+@keyframes db-spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
   }
 }
 

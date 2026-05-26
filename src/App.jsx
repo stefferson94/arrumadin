@@ -100,6 +100,7 @@ function App() {
   const [profileDraft, setProfileDraft] = useState({ name: "", newPassword: "", confirmNewPassword: "" });
   const [profileMessage, setProfileMessage] = useState({ type: "", text: "" });
   const [pendingFixedDeletion, setPendingFixedDeletion] = useState(null);
+  const [dbPendingCount, setDbPendingCount] = useState(0);
   const quickEntryRef = useRef(null);
   const newColumnInputRef = useRef(null);
   const [formError, setFormError] = useState("");
@@ -123,6 +124,7 @@ function App() {
     startInstallment: "1",
     repeatMonths: ""
   });
+  const isDbLoading = dbPendingCount > 0;
 
   const activeYear = getMonthYear(activeMonthId);
   const yearMonths = useMemo(() => createYearMonths(activeYear), [activeYear]);
@@ -547,6 +549,15 @@ function App() {
     setLastCreatedType("");
   }
 
+  async function runDbOperation(operation) {
+    setDbPendingCount((count) => count + 1);
+    try {
+      return await operation();
+    } finally {
+      setDbPendingCount((count) => Math.max(0, count - 1));
+    }
+  }
+
   function updateForm(field, value) {
     clearCreationFeedback();
     setForm((current) => ({ ...current, [field]: value }));
@@ -583,7 +594,7 @@ function App() {
     };
     const generatedExpenses = buildExpensesFromForm({ form: formToSave, activeMonth, amount });
 
-    const result = await saveExpenses(generatedExpenses);
+    const result = await runDbOperation(() => saveExpenses(generatedExpenses));
     if (result.error || !result.data) {
       setFormError("Erro do banco: " + (result.error || "Desconhecido"));
       return;
@@ -630,7 +641,7 @@ function App() {
   }
 
   async function removeExpense(expenseId) {
-    const success = await deleteExpense(expenseId);
+    const success = await runDbOperation(() => deleteExpense(expenseId));
     if (!success) {
       window.alert("Erro ao excluir o gasto do banco de dados.");
       return;
@@ -704,7 +715,7 @@ function App() {
     }).map(e => e.id);
 
     for (const id of toDeleteIds) {
-      await deleteExpense(id);
+      await runDbOperation(() => deleteExpense(id));
     }
 
     setSavedExpenses((current) => current.filter((expense) => !toDeleteIds.includes(expense.id)));
@@ -748,7 +759,7 @@ function App() {
     }).map(e => e.id);
 
     for (const id of toDeleteIds) {
-      await deleteExpense(id);
+      await runDbOperation(() => deleteExpense(id));
     }
 
     setSavedExpenses((current) => current.filter((expense) => !toDeleteIds.includes(expense.id)));
@@ -870,7 +881,7 @@ function App() {
         }
 
         for (const exp of toUpdate) {
-          await updateExpense(exp.id, {
+          await runDbOperation(() => updateExpense(exp.id, {
             description: exp.description,
             amount: exp.amount,
             card: exp.card,
@@ -879,11 +890,11 @@ function App() {
             installments: exp.installments,
             installmentNumber: exp.installmentNumber,
             seriesId: exp.seriesId
-          });
+          }));
         }
 
         for (const id of toDelete) {
-          await deleteExpense(id);
+          await runDbOperation(() => deleteExpense(id));
         }
 
         const newExpenses = [];
@@ -906,7 +917,7 @@ function App() {
           });
 
           if (newRows.length > 0) {
-            const result = await saveExpenses(newRows);
+            const result = await runDbOperation(() => saveExpenses(newRows));
             if (result.data) {
               newExpenses.push(...result.data);
             }
@@ -934,7 +945,7 @@ function App() {
           seriesId: editingTransaction.source.seriesId
         };
 
-        const result = await updateExpense(expenseId, updatedData);
+        const result = await runDbOperation(() => updateExpense(expenseId, updatedData));
         if (result.error) {
           window.alert("Erro ao salvar edição: " + result.error);
           return;
@@ -1042,11 +1053,13 @@ function App() {
     event.preventDefault();
     setLoginNotice("");
 
-    const result = authMode === "signup"
-      ? await createLocalAccount(loginDraft)
-      : authMode === "recover"
-        ? await requestPasswordReset(loginDraft.email)
-        : await loginLocalAccount(loginDraft);
+    const result = await runDbOperation(() => (
+      authMode === "signup"
+        ? createLocalAccount(loginDraft)
+        : authMode === "recover"
+          ? requestPasswordReset(loginDraft.email)
+          : loginLocalAccount(loginDraft)
+    ));
 
     if (!result.ok) {
       setLoginError(result.message);
@@ -1054,8 +1067,10 @@ function App() {
     }
 
     if (authMode === "recover") {
-      setLoginNotice("Se o e-mail existir, voce recebera um link para redefinir sua senha.");
-      setAuthMode("signin");
+      setLoginNotice("E-mail enviado com sucesso! Retornando ao login em instantes...");
+      setTimeout(() => {
+        changeAuthMode("signin");
+      }, 4000);
       return;
     }
 
@@ -1064,7 +1079,7 @@ function App() {
   }
 
   async function logoutLocalUser() {
-    await logoutLocalAccount();
+    await runDbOperation(() => logoutLocalAccount());
     setLocalUser(null);
     setAuthStep("login");
     setAuthMode("signin");
@@ -1077,9 +1092,9 @@ function App() {
     const confirmed = window.confirm("Limpar todos os gastos e configurações da sua conta?");
     if (!confirmed) return;
 
-    await deleteAllExpenses();
-    await deleteAllIncomes();
-    await saveSettings({});
+    await runDbOperation(() => deleteAllExpenses());
+    await runDbOperation(() => deleteAllIncomes());
+    await runDbOperation(() => saveSettings({}));
 
     setSavedExpenses([]);
     setMovedColumns({});
@@ -1131,7 +1146,7 @@ function App() {
       return;
     }
 
-    await saveIncome(activeMonth.id, parsedValue);
+    await runDbOperation(() => saveIncome(activeMonth.id, parsedValue));
 
     setMonthlyIncome((current) => ({
       ...current,
@@ -1156,7 +1171,7 @@ function App() {
       return;
     }
 
-    const result = await updateUserAccount({ name: newName });
+    const result = await runDbOperation(() => updateUserAccount({ name: newName }));
     if (!result.ok) {
       setProfileMessage({ type: "error", text: `Erro: ${result.message}` });
       return;
@@ -1179,7 +1194,7 @@ function App() {
       return;
     }
 
-    const result = await updateUserAccount({ password: newPassword });
+    const result = await runDbOperation(() => updateUserAccount({ password: newPassword }));
     if (!result.ok) {
       setProfileMessage({ type: "error", text: `Erro: ${result.message}` });
       return;
@@ -1242,7 +1257,7 @@ function App() {
         : current
     );
 
-    await renameExpenseCard(oldName, nextName);
+    await runDbOperation(() => renameExpenseCard(oldName, nextName));
   }
 
   function commitColumnName(oldName, rawNextName) {
@@ -1437,21 +1452,82 @@ function App() {
 
   if (!localUser) {
     return (
-      <LoginScreen
-        mode={authMode}
-        draft={loginDraft}
-        error={loginError}
-        notice={loginNotice}
-        onBack={() => setAuthStep("welcome")}
-        onChange={updateLoginDraft}
-        onModeChange={changeAuthMode}
-        onSubmit={submitLocalLogin}
-      />
+      <>
+        <style>{`
+          @keyframes smooth-fade-in { from { opacity: 0; } to { opacity: 1; } }
+          @keyframes smooth-pop-up { from { opacity: 0; transform: scale(0.95) translateY(10px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+        `}</style>
+        <LoginScreen
+          mode={authMode}
+          draft={loginDraft}
+          error={loginError}
+          notice={loginNotice}
+          onBack={() => setAuthStep("welcome")}
+          onChange={updateLoginDraft}
+          onModeChange={changeAuthMode}
+          onSubmit={submitLocalLogin}
+        />
+        {isDbLoading && (
+          <div
+            style={{
+              position: "fixed",
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              zIndex: 9999,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              animation: "smooth-fade-in 0.25s ease-out forwards"
+            }}
+            role="status"
+            aria-live="polite"
+            aria-label="Processando..."
+          >
+            <div 
+              style={{
+                position: "absolute",
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                backgroundColor: "rgba(0, 0, 0, 0.5)",
+                backdropFilter: "blur(3px)"
+              }}
+              aria-hidden="true"
+            />
+            <div
+              style={{
+                position: "relative",
+                backgroundColor: "var(--bg-color, #ffffff)",
+                color: "var(--text-color, #000000)",
+                padding: "0.85rem 1.75rem",
+                borderRadius: "2rem",
+                boxShadow: "0 12px 40px rgba(0, 0, 0, 0.4)",
+                display: "flex",
+                alignItems: "center",
+                gap: "0.75rem",
+                fontSize: "1rem",
+                animation: "smooth-pop-up 0.3s ease-out forwards"
+              }}
+            >
+              <span className="db-loading-spinner" aria-hidden="true" />
+              <strong>Processando...</strong>
+            </div>
+          </div>
+        )}
+      </>
     );
   }
 
   return (
-    <main className="app-shell app-shell-enter">
+    <>
+      <style>{`
+        @keyframes smooth-fade-in { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes smooth-pop-up { from { opacity: 0; transform: scale(0.95) translateY(10px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+      `}</style>
+      <main className="app-shell app-shell-enter">
       {isYearPickerOpen && (
         <YearPicker
           activeYear={activeYear}
@@ -1853,9 +1929,9 @@ function App() {
                     <span aria-hidden="true">✓</span>
                     Incluir
                   </button>
-                  {formError && <small className="form-error">{formError}</small>}
+                  {formError && <small className="form-error" style={{ animation: "smooth-fade-in 0.3s ease-out forwards" }}>{formError}</small>}
                   {lastCreatedCount > 0 && !formError && (
-                    <small className="creation-note">
+                    <small className="creation-note" style={{ animation: "smooth-fade-in 0.3s ease-out forwards" }}>
                       {creationMessage(lastCreatedType, lastCreatedCount)}
                     </small>
                   )}
@@ -2274,7 +2350,7 @@ function App() {
               
               <div className="profile-settings-list">
                 {profileMessage.text && (
-                  <p className={`profile-message ${profileMessage.type === "error" ? "error" : "success"}`}>
+                  <p className={`profile-message ${profileMessage.type === "error" ? "error" : "success"}`} style={{ animation: "smooth-fade-in 0.3s ease-out forwards" }}>
                     {profileMessage.text}
                   </p>
                 )}
@@ -2365,10 +2441,62 @@ function App() {
           </a>
         </footer>
       </section>
+    </main>
+
+      {isDbLoading && (
+        <div
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            zIndex: 9999,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            animation: "smooth-fade-in 0.25s ease-out forwards"
+          }}
+          role="status"
+          aria-live="polite"
+          aria-label="Salvando alterações no banco de dados"
+        >
+          <div 
+            style={{
+              position: "absolute",
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              backgroundColor: "rgba(0, 0, 0, 0.5)",
+              backdropFilter: "blur(3px)"
+            }}
+            aria-hidden="true"
+          />
+          <div
+            style={{
+              position: "relative",
+              backgroundColor: "var(--bg-color, #ffffff)",
+              color: "var(--text-color, #000000)",
+              padding: "0.85rem 1.75rem",
+              borderRadius: "2rem",
+              boxShadow: "0 12px 40px rgba(0, 0, 0, 0.4)",
+              display: "flex",
+              alignItems: "center",
+              gap: "0.75rem",
+              fontSize: "1rem",
+              animation: "smooth-pop-up 0.3s ease-out forwards"
+            }}
+          >
+            <span className="db-loading-spinner" aria-hidden="true" />
+            <strong>Salvando...</strong>
+          </div>
+        </div>
+      )}
 
       {pendingFixedDeletion && (
-        <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Confirmar exclusao de gasto fixo">
-          <div className="confirm-modal">
+        <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Confirmar exclusao de gasto fixo" style={{ animation: "smooth-fade-in 0.2s ease-out forwards" }}>
+          <div className="confirm-modal" style={{ animation: "smooth-pop-up 0.3s ease-out forwards" }}>
             <div className="panel-heading compact">
               <div>
                 <span className="eyebrow">Gasto fixo</span>
@@ -2380,7 +2508,13 @@ function App() {
               Escolha se deseja remover somente este lancamento ou apagar todos os lancamentos dessa serie fixa.
             </p>
             <div className="confirm-modal-actions">
-              <button className="ghost-button" type="button" onClick={confirmDeleteFixedSingle}>
+              <button 
+                className="ghost-button" 
+                type="button" 
+                onClick={confirmDeleteFixedSingle}
+                onMouseEnter={(e) => e.currentTarget.className = "danger-button"}
+                onMouseLeave={(e) => e.currentTarget.className = "ghost-button"}
+              >
                 Excluir somente este
               </button>
               <button className="danger-button" type="button" onClick={confirmDeleteFixedSeries}>
@@ -2392,8 +2526,8 @@ function App() {
       )}
 
       {editingTransaction && (
-        <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Editar lançamento">
-          <form className="edit-modal" onSubmit={saveEditedTransaction}>
+        <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Editar lançamento" style={{ animation: "smooth-fade-in 0.2s ease-out forwards" }}>
+          <form className="edit-modal" onSubmit={saveEditedTransaction} style={{ animation: "smooth-pop-up 0.3s ease-out forwards" }}>
             <div className="panel-heading compact">
               <div>
                 <span className="eyebrow">Editar lançamento</span>
@@ -2460,7 +2594,7 @@ function App() {
           </form>
         </div>
       )}
-    </main>
+    </>
   );
 }
 

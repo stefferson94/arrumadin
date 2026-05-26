@@ -58,6 +58,11 @@ export async function requestPasswordReset(email) {
   });
 
   if (error) {
+    // Intercepta a mensagem de segurança de tempo de espera do Supabase
+    if (error.message.includes("For security purposes, you can only request this after")) {
+      return { ok: false, message: "Aguarde cerca de um minuto antes de pedir um novo link." };
+    }
+    
     return { ok: false, message: error.message };
   }
 
