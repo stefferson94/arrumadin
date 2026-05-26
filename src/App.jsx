@@ -1526,6 +1526,13 @@ function App() {
       <style>{`
         @keyframes smooth-fade-in { from { opacity: 0; } to { opacity: 1; } }
         @keyframes smooth-pop-up { from { opacity: 0; transform: scale(0.95) translateY(10px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+        .metric-danger { background: linear-gradient(145deg, #ffffff 0%, #fef2f2 100%) !important; border-color: #fee2e2 !important; color: #9f1239 !important; }
+        .metric-danger strong { color: #e11d48 !important; }
+        @keyframes border-spin { 100% { transform: rotate(360deg); } }
+        .panel-alert-animated { position: relative; overflow: hidden; z-index: 1; }
+        .panel-alert-animated::before { content: ""; position: absolute; top: -50%; left: -50%; width: 200%; height: 200%; background: conic-gradient(from 0deg, transparent 60%, rgba(225, 29, 72, 0.4) 80%, #e11d48 100%); animation: border-spin 4s linear infinite; z-index: -2; }
+        .panel-alert-animated::after { content: ""; position: absolute; inset: 2px; background: var(--bg-color-offset, #fff); border-radius: 1rem; z-index: -1; }
+        .panel-alert-animated .timeline-header strong { color: #e11d48 !important; }
       `}</style>
       <main className="app-shell app-shell-enter">
       {isYearPickerOpen && (
@@ -1628,7 +1635,7 @@ function App() {
           </section>
         </header>
 
-        <div className="sidebar-panel spending-timeline">
+        <div className={`sidebar-panel spending-timeline ${isOverBudget ? "panel-alert-animated" : ""}`}>
           <div className="timeline-header">
             <span>Histórico de gastos</span>
             <strong>{spendingStatus}</strong>
