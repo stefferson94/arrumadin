@@ -2430,7 +2430,7 @@ function App() {
         )}
 
         <footer className="app-footer">
-          <span>© 2026 Stefferson Luz Silva. Todos os direitos reservados.</span>
+          <span>© 2026 arrumadin. Todos os direitos reservados.</span>
           <a href="https://instagram.com/steffersonluz" target="_blank" rel="noopener noreferrer" className="instagram-link">
             <svg className="instagram-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <rect x="2" y="2" width="20" height="20" rx="5" ry="5"/>

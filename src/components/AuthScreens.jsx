@@ -53,7 +53,7 @@ export function WelcomeScreen({ onStart }) {
         </div>
       </section>
       <footer className="app-footer" style={{ marginTop: "auto", textAlign: "center", padding: "1.5rem", opacity: 0.8, fontSize: "0.85rem", display: "flex", flexDirection: "column", alignItems: "center", gap: "0.5rem" }}>
-        <span>© 2026 Stefferson Luz Silva. Todos os direitos reservados.</span>
+        <span>© 2026 arrumadin. Todos os direitos reservados.</span>
         <a href="https://instagram.com/steffersonluz" target="_blank" rel="noopener noreferrer" className="instagram-link" style={{ display: "inline-flex", alignItems: "center", gap: "0.3rem", color: "inherit", textDecoration: "none" }}>
           <svg className="instagram-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <rect x="2" y="2" width="20" height="20" rx="5" ry="5"/>
@@ -164,7 +164,7 @@ export function LoginScreen({ mode, draft, error, notice, onChange, onModeChange
         </form>
       </section>
       <footer className="app-footer" style={{ marginTop: "auto", textAlign: "center", padding: "1.5rem", opacity: 0.8, fontSize: "0.85rem", display: "flex", flexDirection: "column", alignItems: "center", gap: "0.5rem" }}>
-        <span>© 2026 Stefferson Luz Silva. Todos os direitos reservados.</span>
+        <span>© 2026 arrumadin. Todos os direitos reservados.</span>
         <a href="https://instagram.com/steffersonluz" target="_blank" rel="noopener noreferrer" className="instagram-link" style={{ display: "inline-flex", alignItems: "center", gap: "0.3rem", color: "inherit", textDecoration: "none" }}>
           <svg className="instagram-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <rect x="2" y="2" width="20" height="20" rx="5" ry="5"/>
