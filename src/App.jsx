@@ -39,9 +39,9 @@ import {
   normalizeLedgerType,
   parseInstallmentDescription
 } from "./domain/transactions.js";
-import { getExpenses, saveExpenses, updateExpense, deleteExpense, deleteAllExpenses, renameExpenseCard } from "./services/expenses.js";
+import { getExpenses, saveExpenses, updateExpense, deleteExpense, deleteAllExpenses, renameExpenseCard, getAdminUsersSummary, getAdminUserExpenses } from "./services/expenses.js";
 import { getSettings, saveSettings } from "./services/settings.js";
-import { getIncomes, saveIncome, deleteAllIncomes } from "./services/incomes.js";
+import { getIncomes, saveIncome, deleteAllIncomes, getAdminUserIncomes } from "./services/incomes.js";
 import {
   createLocalAccount,
   getCurrentSession,
@@ -99,9 +99,18 @@ function App() {
   const [incomeDraft, setIncomeDraft] = useState("");
   const [profileDraft, setProfileDraft] = useState({ name: "", newPassword: "", confirmNewPassword: "" });
   const [profileMessage, setProfileMessage] = useState({ type: "", text: "" });
-  const [pendingFixedDeletion, setPendingFixedDeletion] = useState(null);
+  const [pendingSeriesDeletion, setPendingSeriesDeletion] = useState(null);
   const [dbPendingCount, setDbPendingCount] = useState(0);
   const [isAnimationEnabled, setIsAnimationEnabled] = useState(true);
+  const [hideMockData, setHideMockData] = useState(false);
+  const [adminSummary, setAdminSummary] = useState([]);
+  const [adminError, setAdminError] = useState("");
+  const [isAdminLoading, setIsAdminLoading] = useState(false);
+  const [selectedAdminUser, setSelectedAdminUser] = useState(null);
+  const [adminUserYear, setAdminUserYear] = useState(new Date().getFullYear());
+  const [adminUserDetails, setAdminUserDetails] = useState({ expenses: [], incomes: [] });
+  const [isAdminDetailsLoading, setIsAdminDetailsLoading] = useState(false);
+  const [adminSearchQuery, setAdminSearchQuery] = useState("");
   const quickEntryRef = useRef(null);
   const newColumnInputRef = useRef(null);
   const [formError, setFormError] = useState("");
@@ -126,6 +135,7 @@ function App() {
     repeatMonths: ""
   });
   const isDbLoading = dbPendingCount > 0;
+  const isAdmin = localUser?.email === "stefferson94@gmail.com"; // Coloque seu e-mail real aqui
 
   const activeYear = getMonthYear(activeMonthId);
   const yearMonths = useMemo(() => createYearMonths(activeYear), [activeYear]);
@@ -155,7 +165,7 @@ function App() {
         group: movedColumn ?? expense.group
       };
     }),
-    ...activeMonth.transactions.map((transaction, index) => {
+    ...(hideMockData ? [] : activeMonth.transactions.map((transaction, index) => {
       const dragId = `imported:${activeMonth.id}:${index}`;
       const override = ledgerOverrides[dragId] ?? {};
       const movedColumn = override.column ?? movedColumns[dragId];
@@ -172,7 +182,7 @@ function App() {
         card: movedColumn ?? transaction.card,
         group: movedColumn ?? transaction.group
       };
-    })
+    }))
   ].filter(Boolean);
   const newExpensesTotal = monthExpenses.reduce((sum, expense) => sum + expense.amount, 0);
   const adjustedDebt = activeMonth.debt + newExpensesTotal;
@@ -270,7 +280,7 @@ function App() {
         })
         .filter(Boolean);
 
-      const importedTransactions = month.transactions
+      const importedTransactions = hideMockData ? [] : month.transactions
         .map((transaction, index) => {
           const dragId = `imported:${month.id}:${index}`;
           const override = ledgerOverrides[dragId] ?? {};
@@ -335,7 +345,7 @@ function App() {
         })
         .filter(Boolean);
 
-      const importedTransactions = month.transactions
+      const importedTransactions = hideMockData ? [] : month.transactions
         .map((transaction, index) => {
           const dragId = `imported:${month.id}:${index}`;
           const override = ledgerOverrides[dragId] ?? {};
@@ -445,6 +455,7 @@ function App() {
         if (settings.accountColors) setAccountColors(settings.accountColors);
         if (settings.accountTypes) setAccountTypes(settings.accountTypes);
         if (settings.isAnimationEnabled !== undefined) setIsAnimationEnabled(settings.isAnimationEnabled);
+        if (settings.hideMockData) setHideMockData(true);
       }
       
       if (incomes && incomes.length > 0) {
@@ -470,6 +481,23 @@ function App() {
     }
   }, [activeView]);
 
+  useEffect(() => {
+    if (activeView === "admin" && isAdmin) {
+      setIsAdminLoading(true);
+      setAdminError("");
+      getAdminUsersSummary().then(({ data, error }) => {
+        if (error) {
+          console.error("Erro ao carregar dados de admin:", error);
+          setAdminError(error);
+          setAdminSummary([]);
+        } else {
+          setAdminSummary(data);
+        }
+        setIsAdminLoading(false);
+      });
+    }
+  }, [activeView, isAdmin]);
+
   const reportTypeTotals = useMemo(() => {
     const labels = {
       single: "Avulsos",
@@ -489,6 +517,50 @@ function App() {
       value: totals.get(type) ?? 0
     }));
   }, [reportYearTransactions]);
+
+  const adminYearMonths = useMemo(() => {
+    if (!selectedAdminUser) return [];
+    const months = createYearMonths(adminUserYear);
+    return months.map(month => {
+      const monthExps = adminUserDetails.expenses.filter(e => e.monthId === month.id);
+      const debt = monthExps.reduce((sum, e) => sum + e.amount, 0);
+      const incObj = adminUserDetails.incomes.find(i => i.monthId === month.id);
+      const income = incObj ? incObj.amount : 0;
+      const balance = income - debt;
+      return {
+        ...month,
+        debt,
+        income,
+        balance,
+        count: monthExps.length
+      };
+    });
+  }, [selectedAdminUser, adminUserYear, adminUserDetails]);
+
+  const displayedAdminUsers = useMemo(() => {
+    const filtered = adminSummary.filter(user =>
+      user.name.toLowerCase().includes(adminSearchQuery.toLowerCase()) ||
+      user.email.toLowerCase().includes(adminSearchQuery.toLowerCase())
+    );
+    return adminSearchQuery.trim() ? filtered : filtered.slice(0, 5);
+  }, [adminSummary, adminSearchQuery]);
+
+  async function handleSelectAdminUser(user) {
+    setSelectedAdminUser(user);
+    setAdminUserYear(activeYear);
+    setIsAdminDetailsLoading(true);
+    
+    const [expRes, incRes] = await Promise.all([
+      getAdminUserExpenses(user.id),
+      getAdminUserIncomes(user.id)
+    ]);
+    
+    setAdminUserDetails({
+      expenses: expRes.data || [],
+      incomes: incRes.data || []
+    });
+    setIsAdminDetailsLoading(false);
+  }
 
   const maxReportCategory = Math.max(...reportCategoryTotals.map((category) => category.value), 1);
   const maxReportAccount = Math.max(...reportAccountTotals.map((account) => account.amount), 1);
@@ -521,11 +593,12 @@ function App() {
         accountColumns,
         accountColors,
         accountTypes,
-        isAnimationEnabled
+        isAnimationEnabled,
+        hideMockData
       });
     }, 1000); // 1 segundo de "descanso" antes de enviar para o banco
     return () => clearTimeout(timer);
-  }, [activeView, activeMonthId, movedColumns, ledgerOverrides, accountColumns, accountColors, accountTypes, isAnimationEnabled, authStep]);
+  }, [activeView, activeMonthId, movedColumns, ledgerOverrides, accountColumns, accountColors, accountTypes, isAnimationEnabled, hideMockData, authStep]);
 
   useEffect(() => {
     const mediaQuery = window.matchMedia("(max-width: 1024px)");
@@ -665,29 +738,28 @@ function App() {
 
   async function deleteTransaction(transaction) {
     clearCreationFeedback();
-    if (transaction.ledgerType === "installment") {
-      await deleteInstallmentSeries(transaction);
-      return;
-    }
-
-    if (transaction.ledgerType === "fixed") {
-      setPendingFixedDeletion(transaction);
+    if (transaction.ledgerType === "installment" || transaction.ledgerType === "fixed") {
+      setPendingSeriesDeletion(transaction);
       return;
     }
 
     await deleteSingleTransaction(transaction);
   }
 
-  async function confirmDeleteFixedSeries() {
-    if (!pendingFixedDeletion) return;
-    await deleteFixedSeries(pendingFixedDeletion);
-    setPendingFixedDeletion(null);
+  async function confirmDeleteSeries() {
+    if (!pendingSeriesDeletion) return;
+    if (pendingSeriesDeletion.ledgerType === "installment") {
+      await deleteInstallmentSeries(pendingSeriesDeletion);
+    } else {
+      await deleteFixedSeries(pendingSeriesDeletion);
+    }
+    setPendingSeriesDeletion(null);
   }
 
-  async function confirmDeleteFixedSingle() {
-    if (!pendingFixedDeletion) return;
-    await deleteSingleTransaction(pendingFixedDeletion);
-    setPendingFixedDeletion(null);
+  async function confirmDeleteSingle() {
+    if (!pendingSeriesDeletion) return;
+    await deleteSingleTransaction(pendingSeriesDeletion);
+    setPendingSeriesDeletion(null);
   }
 
   async function deleteSingleTransaction(transaction) {
@@ -710,7 +782,8 @@ function App() {
     const base = info?.base;
 
     const toDeleteIds = savedExpenses.filter((expense) => {
-      if (transaction.seriesId && expense.seriesId === transaction.seriesId) return true;
+      if (transaction.seriesId) return expense.seriesId === transaction.seriesId;
+      
       if (!base || expense.type !== "installment") return false;
 
       const expenseInfo = parseInstallmentDescription(expense.description);
@@ -728,15 +801,15 @@ function App() {
 
       allTransactions.forEach((item) => {
         if (item.dragId.startsWith("saved:")) {
-          if (transaction.seriesId && item.seriesId === transaction.seriesId) {
+          if (transaction.seriesId ? item.seriesId === transaction.seriesId : false) {
             delete next[item.dragId];
           }
           return;
         }
 
         const itemInfo = getInstallmentInfo(item);
-        const sameSeries = transaction.seriesId && item.seriesId === transaction.seriesId;
-        const sameLegacySeries = base && itemInfo?.base === base && item.card === transaction.card && item.amount === transaction.amount;
+        const sameSeries = transaction.seriesId ? item.seriesId === transaction.seriesId : false;
+        const sameLegacySeries = !transaction.seriesId && base && itemInfo?.base === base && item.card === transaction.card && item.amount === transaction.amount;
 
         if (sameSeries || sameLegacySeries) {
           next[item.dragId] = {
@@ -752,7 +825,8 @@ function App() {
 
   async function deleteFixedSeries(transaction) {
     const toDeleteIds = savedExpenses.filter((expense) => {
-      if (transaction.seriesId && expense.seriesId === transaction.seriesId) return true;
+      if (transaction.seriesId) return expense.seriesId === transaction.seriesId;
+      
       return (
         expense.type === "fixed" &&
         expense.description === transaction.description &&
@@ -770,8 +844,9 @@ function App() {
       const next = { ...current };
 
       allTransactions.forEach((item) => {
-        const sameSeries = transaction.seriesId && item.seriesId === transaction.seriesId;
+        const sameSeries = transaction.seriesId ? item.seriesId === transaction.seriesId : false;
         const sameLegacySeries =
+          !transaction.seriesId &&
           item.ledgerType === "fixed" &&
           item.description === transaction.description &&
           item.card === transaction.card &&
@@ -835,37 +910,42 @@ function App() {
     if (editingTransaction.dragId.startsWith("saved:")) {
       const expenseId = editingTransaction.dragId.replace("saved:", "");
       
-      const isInstallmentSeriesEdit = editingTransaction.type === "installment" && editingTransaction.source.type === "installment";
+      const wasInstallment = editingTransaction.source.type === "installment" || editingTransaction.source.ledgerType === "installment";
 
-      if (isInstallmentSeriesEdit) {
+      let oldSeriesExpenses = [];
+      if (wasInstallment) {
         const info = getInstallmentInfo(editingTransaction.source);
         const base = info?.base;
         const seriesId = editingTransaction.source.seriesId;
 
-        const seriesExpenses = savedExpenses.filter((expense) => {
+        oldSeriesExpenses = savedExpenses.filter((expense) => {
           if (seriesId && expense.seriesId === seriesId) return true;
+          if (expense.seriesId) return false;
           if (!base || expense.type !== "installment") return false;
           const expenseInfo = parseInstallmentDescription(expense.description);
           return (expenseInfo?.base === base && expense.card === editingTransaction.source.card);
         });
 
-        seriesExpenses.sort((a, b) => a.monthId.localeCompare(b.monthId));
+        oldSeriesExpenses.sort((a, b) => a.monthId.localeCompare(b.monthId));
+      }
 
+      if (wasInstallment && isInstallment) {
         const newBase = editingTransaction.description.trim();
-        const editedIndex = seriesExpenses.findIndex(e => e.id === expenseId);
-        const firstItemNumber = installmentNumber - (editedIndex !== -1 ? editedIndex : 0);
+        const editedIndex = oldSeriesExpenses.findIndex(e => e.id === expenseId);
+        const startIndex = editedIndex !== -1 ? editedIndex : 0;
+        const firstItemNumber = installmentNumber - startIndex;
 
         const toUpdate = [];
         const toDelete = [];
         let maxExistingNumber = 0;
-        let lastMonthId = seriesExpenses[seriesExpenses.length - 1]?.monthId || editingTransaction.source.monthId;
+        let lastMonthId = oldSeriesExpenses[oldSeriesExpenses.length - 1]?.monthId || editingTransaction.source.monthId;
 
-        for (let i = 0; i < seriesExpenses.length; i++) {
-          const expense = seriesExpenses[i];
+        for (let i = 0; i < oldSeriesExpenses.length; i++) {
+          const expense = oldSeriesExpenses[i];
           const num = firstItemNumber + i;
 
           if (num > installments || num < 1) {
-             toDelete.push(expense.id);
+             toDelete.push(expense);
           } else {
              toUpdate.push({
                ...expense,
@@ -874,7 +954,7 @@ function App() {
                card: editingTransaction.card,
                installments: installments,
                installmentNumber: num,
-               seriesId: seriesId || expense.seriesId
+               seriesId: editingTransaction.source.seriesId || expense.seriesId
              });
              if (num > maxExistingNumber) {
                maxExistingNumber = num;
@@ -896,8 +976,8 @@ function App() {
           }));
         }
 
-        for (const id of toDelete) {
-          await runDbOperation(() => deleteExpense(id));
+        for (const exp of toDelete) {
+          await runDbOperation(() => deleteExpense(exp.id));
         }
 
         const newExpenses = [];
@@ -915,7 +995,7 @@ function App() {
               monthId: month.id,
               installments: installments,
               installmentNumber: num,
-              seriesId: seriesId
+              seriesId: editingTransaction.source.seriesId
             };
           });
 
@@ -928,11 +1008,81 @@ function App() {
         }
 
         setSavedExpenses((current) => {
-          let next = current.filter(e => !toDelete.includes(e.id));
+          const deleteIds = toDelete.map(e => e.id);
+          let next = current.filter(e => !deleteIds.includes(e.id));
           next = next.map(e => {
             const updated = toUpdate.find(u => u.id === e.id);
             return updated ? updated : e;
           });
+          return [...next, ...newExpenses];
+        });
+
+      } else if (wasInstallment && !isInstallment) {
+        const toDelete = oldSeriesExpenses.filter(e => e.id !== expenseId);
+        for (const exp of toDelete) {
+          await runDbOperation(() => deleteExpense(exp.id));
+        }
+
+        const updatedData = {
+          description,
+          amount,
+          card: editingTransaction.card,
+          type: editingTransaction.type,
+          monthId: editingTransaction.source.monthId,
+          installments: null,
+          installmentNumber: null,
+          seriesId: null
+        };
+        const result = await runDbOperation(() => updateExpense(expenseId, updatedData));
+
+        setSavedExpenses((current) => {
+          const deleteIds = toDelete.map(e => e.id);
+          let next = current.filter(e => !deleteIds.includes(e.id));
+          return next.map(e => e.id === expenseId ? { ...e, ...result.data } : e);
+        });
+
+      } else if (!wasInstallment && isInstallment) {
+        const newBase = editingTransaction.description.trim();
+        const seriesId = editingTransaction.source.seriesId || (globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : Date.now().toString(36));
+        
+        const updatedData = {
+          description: `${newBase} ${installmentNumber}/${installments}`,
+          amount,
+          card: editingTransaction.card,
+          type: "installment",
+          monthId: editingTransaction.source.monthId,
+          installments,
+          installmentNumber,
+          seriesId
+        };
+        const result = await runDbOperation(() => updateExpense(expenseId, updatedData));
+        
+        const newExpenses = [];
+        const monthsToCreate = installments - installmentNumber;
+        if (monthsToCreate > 0) {
+          const newMonths = createSequentialMonths(editingTransaction.source.monthId, monthsToCreate + 1).slice(1);
+          const newRows = newMonths.map((month, index) => {
+            const num = installmentNumber + 1 + index;
+            return {
+              description: `${newBase} ${num}/${installments}`,
+              amount,
+              card: editingTransaction.card,
+              type: "installment",
+              monthId: month.id,
+              installments: installments,
+              installmentNumber: num,
+              seriesId: seriesId
+            };
+          });
+
+          const saveResult = await runDbOperation(() => saveExpenses(newRows));
+          if (saveResult.data) {
+            newExpenses.push(...saveResult.data);
+          }
+        }
+
+        setSavedExpenses((current) => {
+          let next = current.map(e => e.id === expenseId ? { ...e, ...result.data } : e);
           return [...next, ...newExpenses];
         });
 
@@ -943,8 +1093,8 @@ function App() {
           card: editingTransaction.card,
           type: editingTransaction.type,
           monthId: editingTransaction.source.monthId,
-          installments,
-          installmentNumber,
+          installments: null,
+          installmentNumber: null,
           seriesId: editingTransaction.source.seriesId
         };
 
@@ -1095,15 +1245,26 @@ function App() {
     const confirmed = window.confirm("Limpar todos os gastos e configurações da sua conta?");
     if (!confirmed) return;
 
-    await runDbOperation(() => deleteAllExpenses());
+    const expRes = await runDbOperation(() => deleteAllExpenses());
+    if (expRes === false) {
+      window.alert("Não foi possível apagar os gastos no banco. Tente novamente.");
+      return;
+    }
+    
     await runDbOperation(() => deleteAllIncomes());
-    await runDbOperation(() => saveSettings({}));
 
     setSavedExpenses([]);
     setMovedColumns({});
     setLedgerOverrides({});
     setMonthlyIncome({});
-    setAccountColumns(spreadsheetColumns);
+    setAccountColumns([
+      "Mercado Pago",
+      "Smiles Infinite",
+      "Nubank",
+      "Banco do Brasil",
+      "Outros",
+      "Contas de Casa"
+    ]);
     setAccountColors({});
     setAccountTypes({});
     setActiveMonthId(getCurrentMonthId());
@@ -1112,6 +1273,27 @@ function App() {
     setEditingTransaction(null);
     setEditingIncome(false);
     setIncomeDraft("");
+    setHideMockData(true);
+    setForm(current => ({ ...current, card: "Mercado Pago" }));
+
+    await runDbOperation(() => saveSettings({
+      activeView,
+      activeMonthId: getCurrentMonthId(),
+      movedColumns: {},
+      ledgerOverrides: {},
+      accountColumns: [
+        "Mercado Pago",
+        "Smiles Infinite",
+        "Nubank",
+        "Banco do Brasil",
+        "Outros",
+        "Contas de Casa"
+      ],
+      accountColors: {},
+      accountTypes: {},
+      isAnimationEnabled,
+      hideMockData: true
+    }));
   }
 
   function exportDataToCSV() {
@@ -1570,6 +1752,18 @@ function App() {
               <Icon>{item.icon}</Icon> {item.label}
             </button>
           ))}
+        {isAdmin && (
+          <button
+            className={`nav-item ${activeView === "admin" ? "active" : ""}`}
+            type="button"
+            onClick={() => {
+              clearCreationFeedback();
+              setActiveView("admin");
+            }}
+          >
+            <Icon>🛡</Icon> Administração
+          </button>
+        )}
           <button
             className={`nav-item ${activeView === "perfil" ? "active" : ""}`}
             type="button"
@@ -1655,200 +1849,200 @@ function App() {
           )}
         </div>
 
-        {(activeView === "dashboard" || activeView === "lancamentos") && (
-          <section className="metrics-grid" aria-label="Resumo financeiro">
-            <EditableMetricCard
-              label="Rendimentos"
-              value={activeIncome}
-              kind="income"
-              helper="Liquido do mes"
-              isEditing={editingIncome}
-              draftValue={incomeDraft}
-              onStartEdit={startEditingIncome}
-              onChange={setIncomeDraft}
-              onSave={saveMonthlyIncome}
-            />
-            <MetricCard label="Gastos do mes" value={adjustedDebt} kind="debt" helper={`${allTransactions.length} lancamentos no mes`} />
-            <MetricCard label="Saldo" value={adjustedBalance} kind={adjustedBalance >= 0 ? "income" : "danger"} helper={`${filledAccounts}/${accountColumns.length} contas com lancamentos`} />
-          </section>
-        )}
+            {(activeView === "dashboard" || activeView === "lancamentos") && (
+              <section className="metrics-grid" aria-label="Resumo financeiro">
+                <EditableMetricCard
+                  label="Rendimentos"
+                  value={activeIncome}
+                  kind="income"
+                  helper="Liquido do mes"
+                  isEditing={editingIncome}
+                  draftValue={incomeDraft}
+                  onStartEdit={startEditingIncome}
+                  onChange={setIncomeDraft}
+                  onSave={saveMonthlyIncome}
+                />
+                <MetricCard label="Gastos do mes" value={adjustedDebt} kind="debt" helper={`${allTransactions.length} lancamentos no mes`} />
+                <MetricCard label="Saldo" value={adjustedBalance} kind={adjustedBalance >= 0 ? "income" : "danger"} helper={`${filledAccounts}/${accountColumns.length} contas com lancamentos`} />
+              </section>
+            )}
 
-        {activeView === "dashboard" && (
-          <section className="dashboard-view" aria-label="Dashboard financeiro">
-            <article className="panel annual-panel">
-              <div className="panel-heading">
-                <div>
-                  <span className="eyebrow">Ano {dashboardYear}</span>
-                  <h2>Visao anual</h2>
-                </div>
-                <span className={`annual-status ${annualBalance >= 0 ? "positive" : "risk"}`}>
-                  {annualBalance >= 0 ? "Saldo positivo" : "Saldo negativo"}
-                </span>
-              </div>
-
-              <div className="annual-hero">
-                <div>
-                  <span>Total gasto</span>
-                  <strong>{formatMoney(annualSpent)}</strong>
-                </div>
-                <div>
-                  <span>Rendimentos</span>
-                  <strong>{formatMoney(annualIncome)}</strong>
-                </div>
-                <div>
-                  <span>Saldo anual</span>
-                  <strong className={annualBalance < 0 ? "risk-text" : ""}>{formatMoney(annualBalance)}</strong>
-                </div>
-              </div>
-
-              <div className="annual-ring-row">
-                <div className="annual-ring" style={{ "--usage": `${annualUsage * 360}deg` }}>
-                  <span>{Math.round(annualUsage * 100)}%</span>
-                </div>
-                <div className="annual-insights">
-                  <div>
-                    <span>Maior gasto</span>
-                    <strong>{highestSpendingMonth.label}</strong>
-                    <small>{formatMoney(highestSpendingMonth.debt)}</small>
-                  </div>
-                  <div>
-                    <span>Melhor saldo</span>
-                    <strong>{bestBalanceMonth.label}</strong>
-                    <small>{formatMoney(bestBalanceMonth.balance)}</small>
-                  </div>
-                </div>
-              </div>
-            </article>
-
-            <article className="panel monthly-chart-panel">
-              <div className="panel-heading">
-                <div>
-                  <span className="eyebrow">Mes a mes</span>
-                  <h2>Gastos por mes</h2>
-                </div>
-              </div>
-
-              <div className="monthly-bars" aria-label="Grafico de gastos mensais">
-                {dashboardYearMonths.map((month) => {
-                  const height = Math.max((Math.abs(month.debt) / maxMonthlyDebt) * 100, month.debt ? 8 : 10);
-                  const isActiveMonth = month.id === activeMonth.id;
-                  return (
-                    <button
-                      className={`monthly-bar-item ${isActiveMonth ? "active" : ""} ${month.debt === 0 ? "empty" : ""}`}
-                      key={month.id}
-                      type="button"
-                      onClick={() => setActiveMonthId(month.id)}
-                    >
-                      <span className="monthly-bar-value">
-                        {month.debt !== 0 ? formatMoney(month.debt) : ""}
-                      </span>
-                      <div className="monthly-bar-track">
-                        <span
-                          className={month.balance < 0 ? "risk" : ""}
-                          style={{ "--bar-height": `${height}%` }}
-                        />
-                      </div>
-                      <strong>{month.shortLabel}</strong>
-                      <small className="monthly-current-pill" aria-hidden={!isActiveMonth}>
-                        Atual
-                      </small>
-                    </button>
-                  );
-                })}
-              </div>
-            </article>
-
-            <article className="panel monthly-flow-panel">
-              <div className="panel-heading">
-                <div>
-                  <span className="eyebrow">Fluxo mensal</span>
-                  <h2>Resumo financeiro por mes</h2>
-                </div>
-              </div>
-
-              <div className="monthly-flow-list">
-                <div className="monthly-flow-header" aria-hidden="true">
-                  <span>Mes</span>
-                  <span>Gastos</span>
-                  <span>Rendimentos</span>
-                  <span>Saldo</span>
-                  <span>Uso da renda</span>
-                </div>
-                {dashboardYearMonths.map((month) => {
-                  const incomeUsage = month.income ? Math.min(Math.max((month.debt / month.income) * 100, 0), 100) : 0;
-                  const usageLabel = month.income ? `${Math.round(incomeUsage)}%` : "Sem renda";
-                  const statusLabel = month.income
-                    ? month.balance >= 0
-                      ? "Dentro do mes"
-                      : "Acima da renda"
-                    : "Informe renda";
-                  const isActiveMonth = month.id === activeMonth.id;
-
-                  return (
-                    <button
-                      className={`monthly-flow-row ${isActiveMonth ? "active" : ""}`}
-                      key={month.id}
-                      type="button"
-                      onClick={() => setActiveMonthId(month.id)}
-                    >
-                      <div className="flow-month-cell">
-                        <strong>{month.label}</strong>
-                        <span>{month.count} lancamentos</span>
-                      </div>
-                      <span className="flow-money-cell">
-                        <small>Gastos</small>
-                        <strong>{formatMoney(month.debt)}</strong>
-                      </span>
-                      <span className="flow-money-cell">
-                        <small>Rendimentos</small>
-                        <strong>{formatMoney(month.income)}</strong>
-                      </span>
-                      <span className="flow-money-cell">
-                        <small>Saldo</small>
-                        <strong className={month.balance < 0 ? "risk-text" : "positive-text"}>{formatMoney(month.balance)}</strong>
-                      </span>
-                      <div className="flow-usage-cell">
-                        <div className="flow-usage-copy">
-                          <span>{usageLabel}</span>
-                          <small className={month.balance < 0 ? "risk-text" : ""}>{statusLabel}</small>
-                        </div>
-                        <div className="flow-usage-track">
-                          <span
-                            className={month.balance < 0 ? "risk" : ""}
-                            style={{ width: `${month.income ? Math.max(incomeUsage, month.debt ? 4 : 0) : 0}%` }}
-                          />
-                        </div>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            </article>
-
-            <article className="panel dashboard-categories-panel">
-              <div className="panel-heading">
-                <div>
-                  <span className="eyebrow">Categorias</span>
-                  <h2>Distribuicao do mes</h2>
-                </div>
-              </div>
-              <div className="category-list">
-                {categoryTotals.slice(0, 5).map((category) => (
-                  <div className="category-row" key={category.name}>
-                    <span className={`dot ${category.tone}`} />
-                    <strong>{category.name}</strong>
-                    <div className="category-track">
-                      <span className={category.tone} style={{ width: `${(category.value / maxCategory) * 100}%` }} />
+            {activeView === "dashboard" && (
+              <section className="dashboard-view" aria-label="Dashboard financeiro">
+                <article className="panel annual-panel">
+                  <div className="panel-heading">
+                    <div>
+                      <span className="eyebrow">Ano {dashboardYear}</span>
+                      <h2>Visao anual</h2>
                     </div>
-                    <span>{formatMoney(category.value)}</span>
+                    <span className={`annual-status ${annualBalance >= 0 ? "positive" : "risk"}`}>
+                      {annualBalance >= 0 ? "Saldo positivo" : "Saldo negativo"}
+                    </span>
                   </div>
-                ))}
-              </div>
-            </article>
-          </section>
-        )}
 
-        {activeView === "lancamentos" && (
+                  <div className="annual-hero">
+                    <div>
+                      <span>Total gasto</span>
+                      <strong>{formatMoney(annualSpent)}</strong>
+                    </div>
+                    <div>
+                      <span>Rendimentos</span>
+                      <strong>{formatMoney(annualIncome)}</strong>
+                    </div>
+                    <div>
+                      <span>Saldo anual</span>
+                      <strong className={annualBalance < 0 ? "risk-text" : ""}>{formatMoney(annualBalance)}</strong>
+                    </div>
+                  </div>
+
+                  <div className="annual-ring-row">
+                    <div className="annual-ring" style={{ "--usage": `${annualUsage * 360}deg` }}>
+                      <span>{Math.round(annualUsage * 100)}%</span>
+                    </div>
+                    <div className="annual-insights">
+                      <div>
+                        <span>Maior gasto</span>
+                        <strong>{highestSpendingMonth.label}</strong>
+                        <small>{formatMoney(highestSpendingMonth.debt)}</small>
+                      </div>
+                      <div>
+                        <span>Melhor saldo</span>
+                        <strong>{bestBalanceMonth.label}</strong>
+                        <small>{formatMoney(bestBalanceMonth.balance)}</small>
+                      </div>
+                    </div>
+                  </div>
+                </article>
+
+                <article className="panel monthly-chart-panel">
+                  <div className="panel-heading">
+                    <div>
+                      <span className="eyebrow">Mes a mes</span>
+                      <h2>Gastos por mes</h2>
+                    </div>
+                  </div>
+
+                  <div className="monthly-bars" aria-label="Grafico de gastos mensais">
+                    {dashboardYearMonths.map((month) => {
+                      const height = Math.max((Math.abs(month.debt) / maxMonthlyDebt) * 100, month.debt ? 8 : 10);
+                      const isActiveMonth = month.id === activeMonth.id;
+                      return (
+                        <button
+                          className={`monthly-bar-item ${isActiveMonth ? "active" : ""} ${month.debt === 0 ? "empty" : ""}`}
+                          key={month.id}
+                          type="button"
+                          onClick={() => setActiveMonthId(month.id)}
+                        >
+                          <span className="monthly-bar-value">
+                            {month.debt !== 0 ? formatMoney(month.debt) : ""}
+                          </span>
+                          <div className="monthly-bar-track">
+                            <span
+                              className={month.balance < 0 ? "risk" : ""}
+                              style={{ "--bar-height": `${height}%` }}
+                            />
+                          </div>
+                          <strong>{month.shortLabel}</strong>
+                          <small className="monthly-current-pill" aria-hidden={!isActiveMonth}>
+                            Atual
+                          </small>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </article>
+
+                <article className="panel monthly-flow-panel">
+                  <div className="panel-heading">
+                    <div>
+                      <span className="eyebrow">Fluxo mensal</span>
+                      <h2>Resumo financeiro por mes</h2>
+                    </div>
+                  </div>
+
+                  <div className="monthly-flow-list">
+                    <div className="monthly-flow-header" aria-hidden="true">
+                      <span>Mes</span>
+                      <span>Gastos</span>
+                      <span>Rendimentos</span>
+                      <span>Saldo</span>
+                      <span>Uso da renda</span>
+                    </div>
+                    {dashboardYearMonths.map((month) => {
+                      const incomeUsage = month.income ? Math.min(Math.max((month.debt / month.income) * 100, 0), 100) : 0;
+                      const usageLabel = month.income ? `${Math.round(incomeUsage)}%` : "Sem renda";
+                      const statusLabel = month.income
+                        ? month.balance >= 0
+                          ? "Dentro do mes"
+                          : "Acima da renda"
+                        : "Informe renda";
+                      const isActiveMonth = month.id === activeMonth.id;
+
+                      return (
+                        <button
+                          className={`monthly-flow-row ${isActiveMonth ? "active" : ""}`}
+                          key={month.id}
+                          type="button"
+                          onClick={() => setActiveMonthId(month.id)}
+                        >
+                          <div className="flow-month-cell">
+                            <strong>{month.label}</strong>
+                            <span>{month.count} lancamentos</span>
+                          </div>
+                          <span className="flow-money-cell">
+                            <small>Gastos</small>
+                            <strong>{formatMoney(month.debt)}</strong>
+                          </span>
+                          <span className="flow-money-cell">
+                            <small>Rendimentos</small>
+                            <strong>{formatMoney(month.income)}</strong>
+                          </span>
+                          <span className="flow-money-cell">
+                            <small>Saldo</small>
+                            <strong className={month.balance < 0 ? "risk-text" : "positive-text"}>{formatMoney(month.balance)}</strong>
+                          </span>
+                          <div className="flow-usage-cell">
+                            <div className="flow-usage-copy">
+                              <span>{usageLabel}</span>
+                              <small className={month.balance < 0 ? "risk-text" : ""}>{statusLabel}</small>
+                            </div>
+                            <div className="flow-usage-track">
+                              <span
+                                className={month.balance < 0 ? "risk" : ""}
+                                style={{ width: `${month.income ? Math.max(incomeUsage, month.debt ? 4 : 0) : 0}%` }}
+                              />
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </article>
+
+                <article className="panel dashboard-categories-panel">
+                  <div className="panel-heading">
+                    <div>
+                      <span className="eyebrow">Categorias</span>
+                      <h2>Distribuicao do mes</h2>
+                    </div>
+                  </div>
+                  <div className="category-list">
+                    {categoryTotals.slice(0, 5).map((category) => (
+                      <div className="category-row" key={category.name}>
+                        <span className={`dot ${category.tone}`} />
+                        <strong>{category.name}</strong>
+                        <div className="category-track">
+                          <span className={category.tone} style={{ width: `${(category.value / maxCategory) * 100}%` }} />
+                        </div>
+                        <span>{formatMoney(category.value)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </article>
+              </section>
+            )}
+
+            {activeView === "lancamentos" && (
           <>
             <section className="entry-section">
               <aside className="panel quick-entry" ref={quickEntryRef}>
@@ -1906,33 +2100,18 @@ function App() {
                     <div className="form-row">
                       <label>
                         Parcelas
-                        <input
-                          inputMode="numeric"
-                          placeholder="Ex.: 10"
-                          value={form.installments}
-                          onChange={(event) => updateForm("installments", event.target.value)}
-                        />
+                        <input inputMode="numeric" placeholder="Ex.: 10" value={form.installments} onChange={(event) => updateForm("installments", event.target.value)} />
                       </label>
                       <label>
                         Parcela inicial
-                        <input
-                          inputMode="numeric"
-                          placeholder="Ex.: 1"
-                          value={form.startInstallment}
-                          onChange={(event) => updateForm("startInstallment", event.target.value)}
-                        />
+                        <input inputMode="numeric" placeholder="Ex.: 1" value={form.startInstallment} onChange={(event) => updateForm("startInstallment", event.target.value)} />
                       </label>
                     </div>
                   )}
                   {form.type === "fixed" && (
                     <label>
                       Repetir por quantos meses
-                      <input
-                        inputMode="numeric"
-                        placeholder="Em branco = todos os meses"
-                        value={form.repeatMonths}
-                        onChange={(event) => updateForm("repeatMonths", event.target.value)}
-                      />
+                      <input inputMode="numeric" placeholder="Em branco = todos os meses" value={form.repeatMonths} onChange={(event) => updateForm("repeatMonths", event.target.value)} />
                     </label>
                   )}
                   <button className="save-entry-button" type="submit" onTouchEnd={handleSaveExpenseTouch}>
@@ -1949,529 +2128,673 @@ function App() {
               </aside>
             </section>
 
-            <section className="ledger-flow">
-              <article className="panel ledger-panel">
-                <div className="panel-heading">
-                  <div>
-                    <span className="eyebrow">Planilha do mes</span>
-                    <h2>Lancamentos por conta</h2>
-                  </div>
-              <div className="panel-actions">
-                {renderNewColumnControl()}
-                <span className="ledger-count">{allTransactions.length} itens</span>
+              <section className="ledger-flow">
+                <article className="panel ledger-panel">
+                  <div className="panel-heading">
+                    <div>
+                      <span className="eyebrow">Planilha do mes</span>
+                      <h2>Lancamentos por conta</h2>
+                    </div>
+                <div className="panel-actions">
+                  {renderNewColumnControl()}
+                  <span className="ledger-count">{allTransactions.length} itens</span>
+                </div>
               </div>
-            </div>
-              <div className="ledger-board" aria-label="Lancamentos agrupados por conta">
-              {accountColumns.map((column) => {
-                const transactions = transactionsByColumn[column];
-                const total = transactions.reduce((sum, transaction) => sum + transaction.amount, 0);
-                const groupedByType = groupTransactionsByType(transactions);
-                const columnColor = accountColors[column] ?? defaultColumnColor(column, accountColumns);
-                const isCollapsed = collapsedColumns[column] ?? transactions.length === 0;
+                <div className="ledger-board" aria-label="Lancamentos agrupados por conta">
+                {accountColumns.map((column) => {
+                  const transactions = transactionsByColumn[column];
+                  const total = transactions.reduce((sum, transaction) => sum + transaction.amount, 0);
+                  const groupedByType = groupTransactionsByType(transactions);
+                  const columnColor = accountColors[column] ?? defaultColumnColor(column, accountColumns);
+                  const isCollapsed = collapsedColumns[column] ?? transactions.length === 0;
 
-                return (
-                  <section className={`ledger-column ${columnClass(column, accountColumns)} ${isCollapsed ? "collapsed" : ""}`} key={column}>
-                    <header
-                      style={columnHeaderStyle(accountColors[column], !isCollapsed)}
-                      role="button"
-                      tabIndex={0}
-                      aria-expanded={!isCollapsed}
-                      onClick={(event) => {
-                        if (event.target.closest(".editable-column-name")) {
-                          return;
-                        }
-                        toggleLedgerColumn(column);
-                      }}
-                      onKeyDown={(event) => {
-                        if (event.target.closest(".editable-column-name")) {
-                          return;
-                        }
-                        if (event.key === "Enter" || event.key === " ") {
-                          event.preventDefault();
-                          toggleLedgerColumn(column);
-                        }
-                      }}
-                    >
-                      <div className="ledger-column-toolbar">
-                        <label className="column-color-button" title="Definir cor" onClick={(event) => event.stopPropagation()}>
-                          <span style={{ background: columnColor }} />
-                          <input
-                            aria-label={`Definir cor de ${column}`}
-                            type="color"
-                            value={columnColor}
-                            onClick={(event) => event.stopPropagation()}
-                            onChange={(event) => updateAccountColor(column, event.target.value)}
-                          />
-                        </label>
-                        <button
-                          className="delete-column-button"
-                          type="button"
-                          title="Excluir conta"
-                          aria-label={`Excluir conta ${column}`}
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            deleteAccountColumn(column);
-                          }}
-                        >
-                          ×
-                        </button>
-                      </div>
-                      <strong
-                        className="editable-column-name"
-                        contentEditable
-                        suppressContentEditableWarning
-                        spellCheck="false"
-                        title="Clique para renomear"
-                        onPointerDown={(event) => {
-                          event.stopPropagation();
-                        }}
+                  return (
+                    <section className={`ledger-column ${columnClass(column, accountColumns)} ${isCollapsed ? "collapsed" : ""}`} key={column}>
+                      <header
+                        style={columnHeaderStyle(accountColors[column], !isCollapsed)}
+                        role="button"
+                        tabIndex={0}
+                        aria-expanded={!isCollapsed}
                         onClick={(event) => {
-                          event.stopPropagation();
-                        }}
-                        onFocus={(event) => {
-                          event.stopPropagation();
-                          setEditingColumnName(column);
-                        }}
-                        onBlur={(event) => commitColumnName(column, event.currentTarget.textContent ?? column)}
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter") {
-                            event.preventDefault();
-                            event.currentTarget.blur();
+                          if (event.target.closest(".editable-column-name")) {
+                            return;
                           }
-
-                          if (event.key === "Escape") {
+                          toggleLedgerColumn(column);
+                        }}
+                        onKeyDown={(event) => {
+                          if (event.target.closest(".editable-column-name")) {
+                            return;
+                          }
+                          if (event.key === "Enter" || event.key === " ") {
                             event.preventDefault();
-                            event.currentTarget.textContent = column;
-                            setEditingColumnName(null);
-                            event.currentTarget.blur();
+                            toggleLedgerColumn(column);
                           }
                         }}
                       >
-                        {editingColumnName === column ? column : column}
-                      </strong>
-                      <span>{formatMoney(total)} • {transactions.length} itens</span>
-                      <span className="ledger-collapse-indicator" aria-hidden="true">{isCollapsed ? "＋" : "−"}</span>
-                    </header>
-                    <div className={`ledger-items-wrap ${isCollapsed ? "collapsed" : "expanded"}`}>
-                      <div className="ledger-items">
-                        {ledgerSections.map((section) => (
-                          <div
-                            className="ledger-section"
-                            key={`${column}-${section.key}`}
+                        <div className="ledger-column-toolbar">
+                          <label className="column-color-button" title="Definir cor" onClick={(event) => event.stopPropagation()}>
+                            <span style={{ background: columnColor }} />
+                            <input
+                              aria-label={`Definir cor de ${column}`}
+                              type="color"
+                              value={columnColor}
+                              onClick={(event) => event.stopPropagation()}
+                              onChange={(event) => updateAccountColor(column, event.target.value)}
+                            />
+                          </label>
+                          <button
+                            className="delete-column-button"
+                            type="button"
+                            title="Excluir conta"
+                            aria-label={`Excluir conta ${column}`}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              deleteAccountColumn(column);
+                            }}
                           >
-                            <div
-                              className="ledger-section-title"
-                            >
-                              <span>{section.label}</span>
-                              <strong>{groupedByType[section.key].length}</strong>
-                            </div>
-                            {groupedByType[section.key].length > 0 ? (
-                              groupedByType[section.key].map((transaction) => (
-                                <div
-                                  className={`ledger-item ${section.key} ${transaction.ledgerType === "adjustment" ? "refund-item" : ""}`}
-                                  key={transaction.dragId}
-                                >
-                                  <span>{section.key === "installment" ? (getInstallmentInfo(transaction)?.base ?? transaction.description) : transaction.description}</span>
-                                  {section.key === "installment" && (
-                                    <small>{installmentHint(transaction)}</small>
-                                  )}
-                                  <strong className={transaction.ledgerType === "adjustment" ? "refund-value" : "expense-value"}>
-                                    {formatLedgerItemAmount(transaction)}
-                                  </strong>
-                                  <div className="ledger-actions">
-                                    <button type="button" onClick={(event) => {
-                                      event.stopPropagation();
-                                      openEditTransaction(transaction);
-                                    }}>
-                                      Editar
-                                    </button>
-                                    <button type="button" onClick={(event) => {
-                                      event.stopPropagation();
-                                      deleteTransaction(transaction);
-                                    }}>
-                                      Excluir
-                                    </button>
-                                  </div>
-                                </div>
-                              ))
-                            ) : (
-                              <div className="empty-section">Sem lancamentos</div>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </section>
-                );
-              })}
-            </div>
-          </article>
-        </section>
-          </>
-        )}
-
-        {activeView === "cartoes" && (
-          <section className="cards-view">
-            <article className="panel account-panel">
-              <div className="panel-heading">
-                <div>
-                  <span className="eyebrow">Contas</span>
-                  <h2>{formatMoney(totalAccounts)}</h2>
-                </div>
-                {renderNewColumnControl()}
-              </div>
-
-              <div className="account-list account-groups">
-                {accountSummariesByType.map((group) => {
-                  const groupTotal = group.accounts.reduce((sum, account) => sum + account.amount, 0);
-                  const groupTransactions = group.accounts.reduce((sum, account) => sum + account.count, 0);
-
-                  return (
-                  <section className={`account-type-group account-type-${group.value}`} key={group.value}>
-                    <div className="account-type-heading">
-                      <div>
-                        <span className="account-type-kicker">{group.accounts.length} contas • {groupTransactions} lancamentos</span>
-                        <strong>{group.label}</strong>
-                      </div>
-                      <div className="account-type-total">
-                        <span>Total</span>
-                        <strong>{formatMoney(groupTotal)}</strong>
-                      </div>
-                    </div>
-                    {group.accounts.map((account) => {
-                      const width = maxAccount ? Math.max((Math.abs(account.amount) / maxAccount) * 100, 8) : 0;
-                      return (
-                        <div className="account-row account-manager-row" key={account.name}>
-                          <div>
-                            <strong>{account.name}</strong>
-                            <span>{account.count} lancamentos • fixos {formatMoney(account.fixedTotal)} • parcelas {formatMoney(account.installmentTotal)}</span>
-                          </div>
-                          <span className="account-type-pill">{accountTypeLabel(account.type)}</span>
-                          <div className="bar-track">
-                            <span style={{ width: `${width}%` }} />
-                          </div>
-                          <strong className={account.amount < 0 ? "positive" : ""}>{formatMoney(account.amount)}</strong>
-                          <button className="ghost-button" type="button" onClick={() => deleteAccountColumn(account.name)}>
-                            Excluir
+                            ×
                           </button>
                         </div>
-                      );
-                    })}
-                  </section>
+                        <strong
+                          className="editable-column-name"
+                          contentEditable
+                          suppressContentEditableWarning
+                          spellCheck="false"
+                          title="Clique para renomear"
+                          onPointerDown={(event) => {
+                            event.stopPropagation();
+                          }}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                          }}
+                          onFocus={(event) => {
+                            event.stopPropagation();
+                            setEditingColumnName(column);
+                          }}
+                          onBlur={(event) => commitColumnName(column, event.currentTarget.textContent ?? column)}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter") {
+                              event.preventDefault();
+                              event.currentTarget.blur();
+                            }
+
+                            if (event.key === "Escape") {
+                              event.preventDefault();
+                              event.currentTarget.textContent = column;
+                              setEditingColumnName(null);
+                              event.currentTarget.blur();
+                            }
+                          }}
+                        >
+                          {editingColumnName === column ? column : column}
+                        </strong>
+                        <span>{formatMoney(total)} • {transactions.length} itens</span>
+                        <span className="ledger-collapse-indicator" aria-hidden="true">{isCollapsed ? "＋" : "−"}</span>
+                      </header>
+                      <div className={`ledger-items-wrap ${isCollapsed ? "collapsed" : "expanded"}`}>
+                        <div className="ledger-items">
+                          {ledgerSections.map((section) => (
+                            <div
+                              className="ledger-section"
+                              key={`${column}-${section.key}`}
+                            >
+                              <div
+                                className="ledger-section-title"
+                              >
+                                <span>{section.label}</span>
+                                <strong>{groupedByType[section.key].length}</strong>
+                              </div>
+                              {groupedByType[section.key].length > 0 ? (
+                                groupedByType[section.key].map((transaction) => (
+                                  <div
+                                    className={`ledger-item ${section.key} ${transaction.ledgerType === "adjustment" ? "refund-item" : ""}`}
+                                    key={transaction.dragId}
+                                  >
+                                    <span>{section.key === "installment" ? (getInstallmentInfo(transaction)?.base ?? transaction.description) : transaction.description}</span>
+                                    {section.key === "installment" && (
+                                      <small>{installmentHint(transaction)}</small>
+                                    )}
+                                    <strong className={transaction.ledgerType === "adjustment" ? "refund-value" : "expense-value"}>
+                                      {formatLedgerItemAmount(transaction)}
+                                    </strong>
+                                    <div className="ledger-actions">
+                                      <button type="button" onClick={(event) => {
+                                        event.stopPropagation();
+                                        openEditTransaction(transaction);
+                                      }}>
+                                        Editar
+                                      </button>
+                                      <button type="button" onClick={(event) => {
+                                        event.stopPropagation();
+                                        deleteTransaction(transaction);
+                                      }}>
+                                        Excluir
+                                      </button>
+                                    </div>
+                                  </div>
+                                ))
+                              ) : (
+                                <div className="empty-section">Sem lancamentos</div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </section>
                   );
                 })}
               </div>
             </article>
           </section>
-        )}
+            </>
+            )}
 
-        {activeView === "relatorios" && (
-          <section className="reports-view" aria-label="Relatorios financeiros">
-            <article className="panel reports-hero">
-              <div>
-                <span className="eyebrow">Relatorios {dashboardYear}</span>
-                <h2>Seu dinheiro em leitura clara</h2>
-                <p>
-                  Acompanhe onde o dinheiro esta indo, quais contas pesam mais e como o ano esta evoluindo.
-                </p>
-              </div>
-              <div className="reports-hero-score">
-                <span>Uso da renda anual</span>
-                <strong>{Math.round(annualUsage * 100)}%</strong>
-                <small>{annualBalance >= 0 ? "Ano dentro do controle" : "Gastos acima da renda"}</small>
-              </div>
-            </article>
-
-            <section className="reports-kpi-grid" aria-label="Indicadores principais">
-              <article className="report-kpi">
-                <span>Total gasto no ano</span>
-                <strong>{formatMoney(annualSpent)}</strong>
-                <small>{annualTransactionCount} lancamentos analisados</small>
-              </article>
-              <article className="report-kpi">
-                <span>Media mensal</span>
-                <strong>{formatMoney(averageMonthlySpent)}</strong>
-                <small>Baseada nos 12 meses do ano</small>
-              </article>
-              <article className="report-kpi">
-                <span>Media diaria do mes</span>
-                <strong>{formatMoney(averageDailySpent)}</strong>
-                <small>{activeMonthName} {activeYear}</small>
-              </article>
-              <article className="report-kpi">
-                <span>Maior categoria</span>
-                <strong>{biggestCategory.name}</strong>
-                <small>{formatMoney(biggestCategory.value)}</small>
-              </article>
-            </section>
-
-            <section className="reports-main-grid">
-              <article className="panel report-chart-panel">
-                <div className="panel-heading">
-                  <div>
-                    <span className="eyebrow">Evolucao</span>
-                    <h2>Gastos, renda e saldo por mes</h2>
+            {activeView === "cartoes" && (
+              <section className="cards-view">
+                <article className="panel account-panel">
+                  <div className="panel-heading">
+                    <div>
+                      <span className="eyebrow">Contas</span>
+                      <h2>{formatMoney(totalAccounts)}</h2>
+                    </div>
+                    {renderNewColumnControl()}
                   </div>
-                </div>
-                <div className="report-month-list">
-                  {dashboardYearMonths.map((month) => {
-                    const spentWidth = (Math.abs(month.debt) / maxMonthlyDebt) * 100;
-                    const incomeWidth = annualIncome ? Math.min((month.income / Math.max(...dashboardYearMonths.map((item) => item.income), 1)) * 100, 100) : 0;
-                    const isActiveMonth = month.id === activeMonth.id;
 
-                    return (
-                      <button
-                        className={`report-month-row ${isActiveMonth ? "active" : ""}`}
-                        key={month.id}
-                        type="button"
-                        onClick={() => setActiveMonthId(month.id)}
-                      >
-                        <strong>{month.shortLabel}</strong>
-                        <div className="report-month-bars">
-                          <span className="spent" style={{ width: `${Math.max(spentWidth, month.debt ? 4 : 0)}%` }} />
-                          <span className="income" style={{ width: `${Math.max(incomeWidth, month.income ? 4 : 0)}%` }} />
+                  <div className="account-list account-groups">
+                    {accountSummariesByType.map((group) => {
+                      const groupTotal = group.accounts.reduce((sum, account) => sum + account.amount, 0);
+                      const groupTransactions = group.accounts.reduce((sum, account) => sum + account.count, 0);
+
+                      return (
+                      <section className={`account-type-group account-type-${group.value}`} key={group.value}>
+                        <div className="account-type-heading">
+                          <div>
+                            <span className="account-type-kicker">{group.accounts.length} contas • {groupTransactions} lancamentos</span>
+                            <strong>{group.label}</strong>
+                          </div>
+                          <div className="account-type-total">
+                            <span>Total</span>
+                            <strong>{formatMoney(groupTotal)}</strong>
+                          </div>
                         </div>
-                        <span>{formatMoney(month.debt)}</span>
-                        <small className={month.balance < 0 ? "risk-text" : "positive-text"}>
-                          {formatMoney(month.balance)}
-                        </small>
-                      </button>
-                    );
-                  })}
-                </div>
-                <div className="report-legend">
-                  <span><i className="spent" /> Gastos</span>
-                  <span><i className="income" /> Rendimentos</span>
-                </div>
-              </article>
+                        {group.accounts.map((account) => {
+                          const width = maxAccount ? Math.max((Math.abs(account.amount) / maxAccount) * 100, 8) : 0;
+                          return (
+                            <div className="account-row account-manager-row" key={account.name}>
+                              <div>
+                                <strong>{account.name}</strong>
+                                <span>{account.count} lancamentos • fixos {formatMoney(account.fixedTotal)} • parcelas {formatMoney(account.installmentTotal)}</span>
+                              </div>
+                              <span className="account-type-pill">{accountTypeLabel(account.type)}</span>
+                              <div className="bar-track">
+                                <span style={{ width: `${width}%` }} />
+                              </div>
+                              <strong className={account.amount < 0 ? "positive" : ""}>{formatMoney(account.amount)}</strong>
+                              <button className="ghost-button" type="button" onClick={() => deleteAccountColumn(account.name)}>
+                                Excluir
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </section>
+                      );
+                    })}
+                  </div>
+                </article>
+              </section>
+            )}
 
-              <article className="panel report-insights-panel">
-                <div className="panel-heading">
-                  <div>
-                    <span className="eyebrow">Insights</span>
-                    <h2>O que observar agora</h2>
-                  </div>
-                </div>
-                <div className="report-insight-list">
-                  <div className="report-insight-card">
-                    <span>{monthlyDelta > 0 ? "Aumento no mes" : "Comparacao mensal"}</span>
-                    <strong>
-                      {previousMonthReport
-                        ? `${monthlyDelta > 0 ? "+" : ""}${formatMoney(monthlyDelta)}`
-                        : "Sem mes anterior"}
-                    </strong>
-                    <small>
-                      {previousMonthReport
-                        ? `${Math.abs(monthlyDeltaPercent)}% ${monthlyDelta >= 0 ? "acima" : "abaixo"} de ${previousMonthReport.shortLabel}`
-                        : "Navegue pelos meses para comparar"}
-                    </small>
-                  </div>
-                  <div className="report-insight-card">
-                    <span>Conta que mais concentrou gastos</span>
-                    <strong>{biggestAccount.name}</strong>
-                    <small>{formatMoney(biggestAccount.amount)}</small>
-                  </div>
-                  <div className="report-insight-card">
-                    <span>Projecao do mes</span>
-                    <strong>{formatMoney(spendingProjection)}</strong>
-                    <small>Estimativa com o ritmo atual</small>
-                  </div>
-                </div>
-              </article>
-
-              <article className="panel report-ranking-panel">
-                <div className="panel-heading">
-                  <div>
-                    <span className="eyebrow">Categorias</span>
-                    <h2>Onde voce mais gastou</h2>
-                  </div>
-                </div>
-                <div className="report-ranking-list">
-                  {reportCategoryTotals.slice(0, 6).map((category) => (
-                    <div className="report-ranking-row" key={category.name}>
-                      <span className={`dot ${category.tone}`} />
-                      <strong>{category.name}</strong>
-                      <div className="category-track">
-                        <span className={category.tone} style={{ width: `${(category.value / maxReportCategory) * 100}%` }} />
-                      </div>
-                      <em>{formatMoney(category.value)}</em>
-                    </div>
-                  ))}
-                  {reportCategoryTotals.length === 0 && <p className="empty-state">Ainda nao ha categorias para analisar.</p>}
-                </div>
-              </article>
-
-              <article className="panel report-ranking-panel">
-                <div className="panel-heading">
-                  <div>
-                    <span className="eyebrow">Contas</span>
-                    <h2>Cartoes e contas com maior uso</h2>
-                  </div>
-                </div>
-                <div className="report-account-list">
-                  {reportAccountTotals.slice(0, 6).map((account) => (
-                    <div className="report-account-row" key={account.name}>
-                      <div>
-                        <strong>{account.name}</strong>
-                        <span>{accountTypeLabel(account.type)} • {account.count} lancamentos</span>
-                      </div>
-                      <div className="report-account-track">
-                        <span style={{ width: `${(account.amount / maxReportAccount) * 100}%` }} />
-                      </div>
-                      <em>{formatMoney(account.amount)}</em>
-                    </div>
-                  ))}
-                  {reportAccountTotals.length === 0 && <p className="empty-state">Nenhuma conta movimentada neste ano.</p>}
-                </div>
-              </article>
-
-              <article className="panel report-type-panel">
-                <div className="panel-heading">
-                  <div>
-                    <span className="eyebrow">Tipo de gasto</span>
-                    <h2>Composicao dos lancamentos</h2>
-                  </div>
-                </div>
-                <div className="report-type-grid">
-                  {reportTypeTotals.map((type) => (
-                    <div className={`report-type-card report-type-${type.type}`} key={type.type}>
-                      <span>{type.label}</span>
-                      <strong>{formatMoney(type.value)}</strong>
-                      <div>
-                        <i style={{ width: `${(type.value / maxReportType) * 100}%` }} />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </article>
-            </section>
-          </section>
-        )}
-
-        {activeView === "perfil" && (
-          <section className="profile-view" aria-label="Minha conta">
-            <article className="panel">
-              <div className="panel-heading">
-                <div>
-                  <span className="eyebrow">Sua Conta</span>
-                  <h2>Ajustes e Privacidade</h2>
-                </div>
-              </div>
-              
-              <div className="profile-settings-list">
-                {profileMessage.text && (
-                  <p className={`profile-message ${profileMessage.type === "error" ? "error" : "success"}`} style={{ animation: "smooth-fade-in 0.3s ease-out forwards" }}>
-                    {profileMessage.text}
-                  </p>
-                )}
-
-                <fieldset className="profile-group">
-                  <legend className="profile-group-title">
-                    Dados da Conta
-                  </legend>
+          {activeView === "admin" && isAdmin && (
+            <section className="admin-view" aria-label="Administração">
+              <article className="panel">
+                <div style={{ padding: "1.5rem", color: "var(--text-color)" }}>
                   
-                  <div className="setting-card">
-                    <div className="setting-info">
-                      <strong>Nome</strong>
-                      <p>Este e o nome que aparece na saudacao do app.</p>
-                    </div>
-                    <form className="setting-inline-form" onSubmit={handleUpdateName}>
-                      <input
-                        type="text"
-                        value={profileDraft.name}
-                        onChange={(e) => updateProfileDraft("name", e.target.value)}
-                        className="profile-input"
-                      />
-                      <button className="ghost-button" type="submit">Salvar</button>
-                    </form>
-                  </div>
-
-                  <div className="setting-card">
-                    <div className="setting-info">
-                      <strong>E-mail de acesso</strong>
-                      <p>A alteracao de e-mail nao esta disponivel no momento.</p>
-                    </div>
-                    <span className="setting-static-value">{localUser.email}</span>
-                  </div>
-                </fieldset>
-
-                <fieldset className="profile-group">
-                  <legend className="profile-group-title">
-                    Preferências
-                  </legend>
-                  <div className="setting-card">
-                    <div className="setting-info">
-                      <strong>Animações de alerta</strong>
-                      <p>Destacar os gastos com o contorno em movimento quando você ultrapassar o limite do mês.</p>
-                    </div>
-                    <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer", fontWeight: "500" }}>
-                      <input
-                        type="checkbox"
-                        checked={isAnimationEnabled}
-                        onChange={(e) => setIsAnimationEnabled(e.target.checked)}
-                        style={{ width: "1.1rem", height: "1.1rem", accentColor: "var(--primary-color, #1f4d74)" }}
-                      />
-                      Ativado
-                    </label>
-                  </div>
-                </fieldset>
-
-                <fieldset className="profile-group">
-                  <legend className="profile-group-title">
-                    Alterar senha
-                  </legend>
-                  <form onSubmit={handleChangePassword}>
-                    <div className="setting-card">
-                      <div className="setting-info">
-                        <p>Use uma senha forte para manter sua conta segura.</p>
-                      </div>
-                      <div className="setting-password-form">
-                        <div className="setting-password-grid">
-                          <input className="profile-input" type="password" placeholder="Nova senha" value={profileDraft.newPassword} onChange={(e) => updateProfileDraft("newPassword", e.target.value)} />
-                          <input className="profile-input" type="password" placeholder="Confirmar nova senha" value={profileDraft.confirmNewPassword} onChange={(e) => updateProfileDraft("confirmNewPassword", e.target.value)} />
+                  <div>
+                    {!selectedAdminUser ? (
+                      <>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "1rem", marginBottom: "1.5rem" }}>
+                          <div>
+                            <span className="eyebrow" style={{ color: "#e11d48", display: "block", marginBottom: "0.25rem" }}>Acesso restrito</span>
+                            <h3 style={{ margin: 0 }}>Resumo de Usuários ({adminSummary.length})</h3>
+                          </div>
+                          <div style={{ position: "relative", width: "100%", maxWidth: "300px" }}>
+                            <svg
+                              width="16"
+                              height="16"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              style={{ position: "absolute", left: "12px", top: "50%", transform: "translateY(-50%)", color: "var(--text-color-light)" }}
+                            >
+                              <circle cx="11" cy="11" r="8"></circle>
+                              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                            </svg>
+                            <input
+                              type="text"
+                              placeholder="Pesquisar por nome ou e-mail..."
+                              value={adminSearchQuery}
+                              onChange={(e) => setAdminSearchQuery(e.target.value)}
+                              style={{
+                                padding: "0.6rem 1rem 0.6rem 2.2rem", 
+                                borderRadius: "2rem", 
+                                border: "1px solid var(--border-color)",
+                                backgroundColor: "var(--bg-color, #ffffff)", 
+                                color: "var(--text-color)", 
+                                fontSize: "0.95rem",
+                                width: "100%", 
+                                outline: "none",
+                                boxShadow: "0 1px 3px rgba(0,0,0,0.05)"
+                              }}
+                            />
+                          </div>
                         </div>
-                        <button className="ghost-button" type="submit">Alterar Senha</button>
+                        
+                        {adminError && (
+                          <div style={{ padding: "1rem", backgroundColor: "#fef2f2", color: "#e11d48", borderRadius: "0.5rem", marginTop: "1rem", border: "1px solid #fee2e2" }}>
+                            <strong>Erro no Banco de Dados:</strong> {adminError}
+                            <p style={{ marginTop: "0.5rem", fontSize: "0.85rem" }}>Verifique se você rodou o código SQL corretamente no painel do Supabase.</p>
+                          </div>
+                        )}
+                        {isAdminLoading ? (
+                          <p style={{ marginTop: "1rem" }}>Carregando dados globais...</p>
+                        ) : !adminError && (
+                          <div style={{ overflowX: "auto", marginTop: "1rem", backgroundColor: "var(--bg-color-offset)", borderRadius: "0.5rem", padding: "1rem" }}>
+                            <table style={{ width: "100%", textAlign: "left", borderCollapse: "collapse", fontSize: "0.9rem" }}>
+                              <thead>
+                                <tr style={{ borderBottom: "1px solid var(--border-color)", color: "var(--text-color-light)" }}>
+                                  <th style={{ padding: "0.5rem" }}>Usuário</th>
+                                  <th style={{ padding: "0.5rem" }}>E-mail</th>
+                                  <th style={{ padding: "0.5rem", textAlign: "right" }}>Ações</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {displayedAdminUsers.map(user => (
+                                  <tr key={user.id} style={{ borderBottom: "1px solid var(--border-color-light)" }}>
+                                    <td style={{ padding: "0.5rem", whiteSpace: "nowrap", fontWeight: "500" }}>{user.name}</td>
+                                    <td style={{ padding: "0.5rem", color: "var(--text-color-light)" }}>{user.email}</td>
+                                    <td style={{ padding: "0.5rem", textAlign: "right" }}>
+                                      <button className="ghost-button" style={{ padding: "0.25rem 0.75rem", fontSize: "0.85rem" }} onClick={() => handleSelectAdminUser(user)}>Detalhes</button>
+                                    </td>
+                                  </tr>
+                                ))}
+                                {displayedAdminUsers.length === 0 && (
+                                  <tr>
+                                    <td colSpan="3" style={{ padding: "2rem", textAlign: "center", color: "var(--text-color-light)" }}>
+                                      Nenhum usuário encontrado.
+                                    </td>
+                                  </tr>
+                                )}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <div>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "2rem", borderBottom: "1px solid var(--border-color)", paddingBottom: "1rem" }}>
+                          <div>
+                            <button className="ghost-button" type="button" onClick={() => setSelectedAdminUser(null)} style={{ padding: "0.25rem 0", marginBottom: "0.5rem" }}>← Voltar para resumo</button>
+                            <span className="eyebrow" style={{ color: "#e11d48", display: "block", marginBottom: "0.25rem" }}>Acesso restrito</span>
+                            <h3 style={{ margin: 0, fontSize: "1.25rem" }}>Detalhes de {selectedAdminUser.name}</h3>
+                            <span style={{ color: "var(--text-color-light)", fontSize: "0.9rem" }}>{selectedAdminUser.email}</span>
+                          </div>
+                          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", backgroundColor: "var(--bg-color-offset)", padding: "0.25rem", borderRadius: "2rem" }}>
+                            <button className="icon-button" type="button" onClick={() => setAdminUserYear(y => y - 1)}>‹</button>
+                            <strong style={{ minWidth: "4rem", textAlign: "center" }}>{adminUserYear}</strong>
+                            <button className="icon-button" type="button" onClick={() => setAdminUserYear(y => y + 1)}>›</button>
+                          </div>
+                        </div>
+
+                        {isAdminDetailsLoading ? (
+                          <p>Carregando lançamentos...</p>
+                        ) : (
+                          <div className="monthly-flow-list">
+                            <div className="monthly-flow-header" aria-hidden="true">
+                              <span>Mês</span>
+                              <span>Gastos</span>
+                              <span>Rendimentos</span>
+                              <span>Saldo</span>
+                            </div>
+                            {adminYearMonths.map(month => (
+                              <div className="monthly-flow-row" key={month.id} style={{ cursor: "default" }}>
+                                <div className="flow-month-cell">
+                                  <strong>{month.label}</strong>
+                                  <span>{month.count} lançamentos</span>
+                                </div>
+                                <span className="flow-money-cell">
+                                  <small>Gastos</small>
+                                  <strong>{formatMoney(month.debt)}</strong>
+                                </span>
+                                <span className="flow-money-cell">
+                                  <small>Rendimentos</small>
+                                  <strong>{formatMoney(month.income)}</strong>
+                                </span>
+                                <span className="flow-money-cell">
+                                  <small>Saldo</small>
+                                  <strong className={month.balance < 0 ? "risk-text" : "positive-text"}>{formatMoney(month.balance)}</strong>
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </article>
+            </section>
+          )}
+
+            {activeView === "relatorios" && (
+              <section className="reports-view" aria-label="Relatorios financeiros">
+                <article className="panel reports-hero">
+                  <div>
+                    <span className="eyebrow">Relatorios {dashboardYear}</span>
+                    <h2>Seu dinheiro em leitura clara</h2>
+                    <p>
+                      Acompanhe onde o dinheiro esta indo, quais contas pesam mais e como o ano esta evoluindo.
+                    </p>
+                  </div>
+                  <div className="reports-hero-score">
+                    <span>Uso da renda anual</span>
+                    <strong>{Math.round(annualUsage * 100)}%</strong>
+                    <small>{annualBalance >= 0 ? "Ano dentro do controle" : "Gastos acima da renda"}</small>
+                  </div>
+                </article>
+
+                <section className="reports-kpi-grid" aria-label="Indicadores principais">
+                  <article className="report-kpi">
+                    <span>Total gasto no ano</span>
+                    <strong>{formatMoney(annualSpent)}</strong>
+                    <small>{annualTransactionCount} lancamentos analisados</small>
+                  </article>
+                  <article className="report-kpi">
+                    <span>Media mensal</span>
+                    <strong>{formatMoney(averageMonthlySpent)}</strong>
+                    <small>Baseada nos 12 meses do ano</small>
+                  </article>
+                  <article className="report-kpi">
+                    <span>Media diaria do mes</span>
+                    <strong>{formatMoney(averageDailySpent)}</strong>
+                    <small>{activeMonthName} {activeYear}</small>
+                  </article>
+                  <article className="report-kpi">
+                    <span>Maior categoria</span>
+                    <strong>{biggestCategory.name}</strong>
+                    <small>{formatMoney(biggestCategory.value)}</small>
+                  </article>
+                </section>
+
+                <section className="reports-main-grid">
+                  <article className="panel report-chart-panel">
+                    <div className="panel-heading">
+                      <div>
+                        <span className="eyebrow">Evolucao</span>
+                        <h2>Gastos, renda e saldo por mes</h2>
                       </div>
                     </div>
-                  </form>
-                </fieldset>
+                    <div className="report-month-list">
+                      {dashboardYearMonths.map((month) => {
+                        const spentWidth = (Math.abs(month.debt) / maxMonthlyDebt) * 100;
+                        const incomeWidth = annualIncome ? Math.min((month.income / Math.max(...dashboardYearMonths.map((item) => item.income), 1)) * 100, 100) : 0;
+                        const isActiveMonth = month.id === activeMonth.id;
 
-                <fieldset className="profile-group">
-                  <legend className="profile-group-title">
-                    Gerenciamento de Dados
-                  </legend>
-                  <div className="setting-card">
-                    <div className="setting-info">
-                      <strong>Exportar dados</strong>
-                      <p>Baixe todos os seus lancamentos de {dashboardYear} em formato CSV.</p>
+                        return (
+                          <button
+                            className={`report-month-row ${isActiveMonth ? "active" : ""}`}
+                            key={month.id}
+                            type="button"
+                            onClick={() => setActiveMonthId(month.id)}
+                          >
+                            <strong>{month.shortLabel}</strong>
+                            <div className="report-month-bars">
+                              <span className="spent" style={{ width: `${Math.max(spentWidth, month.debt ? 4 : 0)}%` }} />
+                              <span className="income" style={{ width: `${Math.max(incomeWidth, month.income ? 4 : 0)}%` }} />
+                            </div>
+                            <span>{formatMoney(month.debt)}</span>
+                            <small className={month.balance < 0 ? "risk-text" : "positive-text"}>
+                              {formatMoney(month.balance)}
+                            </small>
+                          </button>
+                        );
+                      })}
                     </div>
-                    <button className="ghost-button" type="button" onClick={exportDataToCSV}>Exportar CSV</button>
-                  </div>
-                  <div className="setting-card danger-zone">
-                    <div className="setting-info">
-                      <strong>Zerar base de dados</strong>
-                      <p>Apaga permanentemente todos os seus gastos, rendas e contas.</p>
+                    <div className="report-legend">
+                      <span><i className="spent" /> Gastos</span>
+                      <span><i className="income" /> Rendimentos</span>
                     </div>
-                    <button className="danger-button" type="button" onClick={clearTestData}>Limpar tudo</button>
+                  </article>
+
+                  <article className="panel report-insights-panel">
+                    <div className="panel-heading">
+                      <div>
+                        <span className="eyebrow">Insights</span>
+                        <h2>O que observar agora</h2>
+                      </div>
+                    </div>
+                    <div className="report-insight-list">
+                      <div className="report-insight-card">
+                        <span>{monthlyDelta > 0 ? "Aumento no mes" : "Comparacao mensal"}</span>
+                        <strong>
+                          {previousMonthReport
+                            ? `${monthlyDelta > 0 ? "+" : ""}${formatMoney(monthlyDelta)}`
+                            : "Sem mes anterior"}
+                        </strong>
+                        <small>
+                          {previousMonthReport
+                            ? `${Math.abs(monthlyDeltaPercent)}% ${monthlyDelta >= 0 ? "acima" : "abaixo"} de ${previousMonthReport.shortLabel}`
+                            : "Navegue pelos meses para comparar"}
+                        </small>
+                      </div>
+                      <div className="report-insight-card">
+                        <span>Conta que mais concentrou gastos</span>
+                        <strong>{biggestAccount.name}</strong>
+                        <small>{formatMoney(biggestAccount.amount)}</small>
+                      </div>
+                      <div className="report-insight-card">
+                        <span>Projecao do mes</span>
+                        <strong>{formatMoney(spendingProjection)}</strong>
+                        <small>Estimativa com o ritmo atual</small>
+                      </div>
+                    </div>
+                  </article>
+
+                  <article className="panel report-ranking-panel">
+                    <div className="panel-heading">
+                      <div>
+                        <span className="eyebrow">Categorias</span>
+                        <h2>Onde voce mais gastou</h2>
+                      </div>
+                    </div>
+                    <div className="report-ranking-list">
+                      {reportCategoryTotals.slice(0, 6).map((category) => (
+                        <div className="report-ranking-row" key={category.name}>
+                          <span className={`dot ${category.tone}`} />
+                          <strong>{category.name}</strong>
+                          <div className="category-track">
+                            <span className={category.tone} style={{ width: `${(category.value / maxReportCategory) * 100}%` }} />
+                          </div>
+                          <em>{formatMoney(category.value)}</em>
+                        </div>
+                      ))}
+                      {reportCategoryTotals.length === 0 && <p className="empty-state">Ainda nao ha categorias para analisar.</p>}
+                    </div>
+                  </article>
+
+                  <article className="panel report-ranking-panel">
+                    <div className="panel-heading">
+                      <div>
+                        <span className="eyebrow">Contas</span>
+                        <h2>Cartoes e contas com maior uso</h2>
+                      </div>
+                    </div>
+                    <div className="report-account-list">
+                      {reportAccountTotals.slice(0, 6).map((account) => (
+                        <div className="report-account-row" key={account.name}>
+                          <div>
+                            <strong>{account.name}</strong>
+                            <span>{accountTypeLabel(account.type)} • {account.count} lancamentos</span>
+                          </div>
+                          <div className="report-account-track">
+                            <span style={{ width: `${(account.amount / maxReportAccount) * 100}%` }} />
+                          </div>
+                          <em>{formatMoney(account.amount)}</em>
+                        </div>
+                      ))}
+                      {reportAccountTotals.length === 0 && <p className="empty-state">Nenhuma conta movimentada neste ano.</p>}
+                    </div>
+                  </article>
+
+                  <article className="panel report-type-panel">
+                    <div className="panel-heading">
+                      <div>
+                        <span className="eyebrow">Tipo de gasto</span>
+                        <h2>Composicao dos lancamentos</h2>
+                      </div>
+                    </div>
+                    <div className="report-type-grid">
+                      {reportTypeTotals.map((type) => (
+                        <div className={`report-type-card report-type-${type.type}`} key={type.type}>
+                          <span>{type.label}</span>
+                          <strong>{formatMoney(type.value)}</strong>
+                          <div>
+                            <i style={{ width: `${(type.value / maxReportType) * 100}%` }} />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </article>
+                </section>
+              </section>
+            )}
+
+            {activeView === "perfil" && (
+              <section className="profile-view" aria-label="Minha conta">
+                <article className="panel">
+                  <div className="panel-heading">
+                    <div>
+                      <span className="eyebrow">Sua Conta</span>
+                      <h2>Ajustes e Privacidade</h2>
+                    </div>
                   </div>
-                </fieldset>
-              </div>
-            </article>
+                  
+                  <div className="profile-settings-list">
+                    {profileMessage.text && (
+                      <p className={`profile-message ${profileMessage.type === "error" ? "error" : "success"}`} style={{ animation: "smooth-fade-in 0.3s ease-out forwards" }}>
+                        {profileMessage.text}
+                      </p>
+                    )}
+
+                    <fieldset className="profile-group">
+                      <legend className="profile-group-title">
+                        Dados da Conta
+                      </legend>
+                      
+                      <div className="setting-card">
+                        <div className="setting-info">
+                          <strong>Nome</strong>
+                          <p>Este e o nome que aparece na saudacao do app.</p>
+                        </div>
+                        <form className="setting-inline-form" onSubmit={handleUpdateName}>
+                          <input
+                            type="text"
+                            value={profileDraft.name}
+                            onChange={(e) => updateProfileDraft("name", e.target.value)}
+                            className="profile-input"
+                          />
+                          <button className="ghost-button" type="submit">Salvar</button>
+                        </form>
+                      </div>
+
+                      <div className="setting-card">
+                        <div className="setting-info">
+                          <strong>E-mail de acesso</strong>
+                          <p>A alteracao de e-mail nao esta disponivel no momento.</p>
+                        </div>
+                        <span className="setting-static-value">{localUser.email}</span>
+                      </div>
+                    </fieldset>
+
+                    <fieldset className="profile-group">
+                      <legend className="profile-group-title">
+                        Preferências
+                      </legend>
+                      <div className="setting-card">
+                        <div className="setting-info">
+                          <strong>Animações de alerta</strong>
+                          <p>Destacar os gastos com o contorno em movimento quando você ultrapassar o limite do mês.</p>
+                        </div>
+                        <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer", fontWeight: "500" }}>
+                          <input
+                            type="checkbox"
+                            checked={isAnimationEnabled}
+                            onChange={(e) => setIsAnimationEnabled(e.target.checked)}
+                            style={{ width: "1.1rem", height: "1.1rem", accentColor: "var(--primary-color, #1f4d74)" }}
+                          />
+                          Ativado
+                        </label>
+                      </div>
+                    </fieldset>
+
+                    <fieldset className="profile-group">
+                      <legend className="profile-group-title">
+                        Alterar senha
+                      </legend>
+                      <form onSubmit={handleChangePassword}>
+                        <div className="setting-card">
+                          <div className="setting-info">
+                            <p>Use uma senha forte para manter sua conta segura.</p>
+                          </div>
+                          <div className="setting-password-form">
+                            <div className="setting-password-grid">
+                              <input className="profile-input" type="password" placeholder="Nova senha" value={profileDraft.newPassword} onChange={(e) => updateProfileDraft("newPassword", e.target.value)} />
+                              <input className="profile-input" type="password" placeholder="Confirmar nova senha" value={profileDraft.confirmNewPassword} onChange={(e) => updateProfileDraft("confirmNewPassword", e.target.value)} />
+                            </div>
+                            <button className="ghost-button" type="submit">Alterar Senha</button>
+                          </div>
+                        </div>
+                      </form>
+                    </fieldset>
+
+                    <fieldset className="profile-group">
+                      <legend className="profile-group-title">
+                        Gerenciamento de Dados
+                      </legend>
+                      <div className="setting-card">
+                        <div className="setting-info">
+                          <strong>Exportar dados</strong>
+                          <p>Baixe todos os seus lancamentos de {dashboardYear} em formato CSV.</p>
+                        </div>
+                        <button className="ghost-button" type="button" onClick={exportDataToCSV}>Exportar CSV</button>
+                      </div>
+                      <div className="setting-card danger-zone">
+                        <div className="setting-info">
+                          <strong>Zerar base de dados</strong>
+                          <p>Apaga permanentemente todos os seus gastos, rendas e contas.</p>
+                        </div>
+                        <button className="danger-button" type="button" onClick={clearTestData}>Limpar tudo</button>
+                      </div>
+                    </fieldset>
+                  </div>
+                </article>
+              </section>
+            )}
+
+            <footer className="app-footer">
+              <span>© 2026 arrumadin. Todos os direitos reservados.</span>
+              <a href="https://instagram.com/steffersonluz" target="_blank" rel="noopener noreferrer" className="instagram-link">
+                <svg className="instagram-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <rect x="2" y="2" width="20" height="20" rx="5" ry="5"/>
+                  <circle cx="12" cy="12" r="5"/>
+                  <circle cx="17.5" cy="6.5" r="1.5"/>
+                </svg>
+                steffersonluz
+              </a>
+            </footer>
           </section>
-        )}
-
-        <footer className="app-footer">
-          <span>© 2026 arrumadin. Todos os direitos reservados.</span>
-          <a href="https://instagram.com/steffersonluz" target="_blank" rel="noopener noreferrer" className="instagram-link">
-            <svg className="instagram-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <rect x="2" y="2" width="20" height="20" rx="5" ry="5"/>
-              <circle cx="12" cy="12" r="5"/>
-              <circle cx="17.5" cy="6.5" r="1.5"/>
-            </svg>
-            steffersonluz
-          </a>
-        </footer>
-      </section>
     </main>
 
       {isDbLoading && (
@@ -2525,30 +2848,30 @@ function App() {
         </div>
       )}
 
-      {pendingFixedDeletion && (
-        <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Confirmar exclusao de gasto fixo" style={{ animation: "smooth-fade-in 0.2s ease-out forwards" }}>
+      {pendingSeriesDeletion && (
+        <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Confirmar exclusao" style={{ animation: "smooth-fade-in 0.2s ease-out forwards" }}>
           <div className="confirm-modal" style={{ animation: "smooth-pop-up 0.3s ease-out forwards" }}>
             <div className="panel-heading compact">
               <div>
-                <span className="eyebrow">Gasto fixo</span>
+                <span className="eyebrow">{pendingSeriesDeletion.ledgerType === "installment" ? "Gasto parcelado" : "Gasto fixo"}</span>
                 <h2>Como voce quer excluir?</h2>
               </div>
-              <button className="icon-button" type="button" onClick={() => setPendingFixedDeletion(null)}>×</button>
+              <button className="icon-button" type="button" onClick={() => setPendingSeriesDeletion(null)}>×</button>
             </div>
             <p className="confirm-modal-copy">
-              Escolha se deseja remover somente este lancamento ou apagar todos os lancamentos dessa serie fixa.
+              Escolha se deseja remover somente este lancamento ou apagar todos os lancamentos dessa serie{pendingSeriesDeletion.ledgerType === "installment" ? " parcelada" : " fixa"}.
             </p>
             <div className="confirm-modal-actions">
               <button 
                 className="ghost-button" 
                 type="button" 
-                onClick={confirmDeleteFixedSingle}
+                onClick={confirmDeleteSingle}
                 onMouseEnter={(e) => e.currentTarget.className = "danger-button"}
                 onMouseLeave={(e) => e.currentTarget.className = "ghost-button"}
               >
                 Excluir somente este
               </button>
-              <button className="danger-button" type="button" onClick={confirmDeleteFixedSeries}>
+              <button className="danger-button" type="button" onClick={confirmDeleteSeries}>
                 Excluir serie inteira
               </button>
             </div>

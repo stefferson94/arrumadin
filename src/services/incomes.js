@@ -1,9 +1,13 @@
 import { supabase } from "./supabase.js";
 
 export async function getIncomes() {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return [];
+
   const { data, error } = await supabase
     .from("monthly_incomes")
-    .select("*");
+    .select("*")
+    .eq("user_id", user.id);
 
   if (error) {
     console.error("Erro ao buscar rendas do Supabase:", error);
@@ -29,4 +33,19 @@ export async function deleteAllIncomes() {
 
   const { error } = await supabase.from("monthly_incomes").delete().eq("user_id", user.id);
   return !error;
+}
+
+export async function getAdminUserIncomes(userId) {
+  const { data, error } = await supabase.rpc('get_admin_user_incomes', { p_user_id: userId });
+
+  if (error) {
+    console.error("Erro ao buscar rendas do usuário:", error);
+    return { data: [], error: error.message };
+  }
+
+  const mappedData = data.map(row => ({
+    monthId: row.month_id,
+    amount: Number(row.amount)
+  }));
+  return { data: mappedData, error: null };
 }

@@ -1,9 +1,13 @@
 import { supabase } from "./supabase.js";
 
 export async function getExpenses() {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return [];
+
   const { data, error } = await supabase
     .from("expenses")
     .select("*")
+    .eq("user_id", user.id)
     .order("created_at", { ascending: false });
 
   if (error) {
@@ -116,7 +120,11 @@ export async function deleteAllExpenses() {
   if (!user) return false;
 
   const { error } = await supabase.from("expenses").delete().eq("user_id", user.id);
-  return !error;
+  if (error) {
+    console.error("Erro ao limpar gastos:", error);
+    return false;
+  }
+  return true;
 }
 
 export async function renameExpenseCard(oldCardName, newCardName) {
@@ -130,4 +138,64 @@ export async function renameExpenseCard(oldCardName, newCardName) {
     return false;
   }
   return true;
+}
+
+export async function getAllSystemExpenses() {
+  const { data, error } = await supabase.rpc('get_all_expenses_with_user_details');
+
+  if (error) {
+    console.error("Erro ao buscar todos os gastos do sistema:", error);
+    // Retornamos o erro para que a tela possa lidar com ele
+    return { data: [], error: error.message };
+  }
+
+  // Mapeamos o retorno da função para o formato que o app espera (camelCase)
+  const mappedData = data.map(row => ({
+    id: row.expense_id,
+    description: row.description,
+    amount: Number(row.amount),
+    monthId: row.month_id,
+    userEmail: row.user_email,
+    userName: row.user_name
+  }));
+
+  return { data: mappedData, error: null };
+}
+
+export async function getAdminUsersSummary() {
+  const { data, error } = await supabase.rpc('get_admin_users_summary');
+
+  if (error) {
+    console.error("Erro ao buscar resumo de admin:", error);
+    return { data: [], error: error.message };
+  }
+
+  const mappedData = data.map(row => ({
+    id: row.user_id,
+    name: row.user_name || row.user_email,
+    email: row.user_email,
+    incomes: Number(row.total_incomes),
+    expenses: Number(row.total_expenses),
+    balance: Number(row.total_incomes) - Number(row.total_expenses)
+  }));
+  return { data: mappedData, error: null };
+}
+
+export async function getAdminUserExpenses(userId) {
+  const { data, error } = await supabase.rpc('get_admin_user_expenses', { p_user_id: userId });
+
+  if (error) {
+    console.error("Erro ao buscar gastos do usuário:", error);
+    return { data: [], error: error.message };
+  }
+
+  const mappedData = data.map(row => ({
+    id: row.id,
+    description: row.description,
+    amount: Number(row.amount),
+    card: row.card,
+    type: row.type,
+    monthId: row.month_id
+  }));
+  return { data: mappedData, error: null };
 }
