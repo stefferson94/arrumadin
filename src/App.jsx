@@ -39,7 +39,7 @@ import {
   normalizeLedgerType,
   parseInstallmentDescription
 } from "./domain/transactions.js";
-import { getExpenses, saveExpenses, updateExpense, deleteExpense, deleteAllExpenses, renameExpenseCard, getAdminUsersSummary, getAdminUserExpenses } from "./services/expenses.js";
+import { getExpenses, saveExpenses, updateExpense, deleteExpense, deleteAllExpenses, renameExpenseCard, getAdminUsersSummary, getAdminUserExpenses, toggleUserBlock, deleteAdminUser } from "./services/expenses.js";
 import { getSettings, saveSettings } from "./services/settings.js";
 import { getIncomes, saveIncome, deleteAllIncomes, getAdminUserIncomes } from "./services/incomes.js";
 import {
@@ -567,6 +567,31 @@ function App() {
       incomes: incRes.data || []
     });
     setIsAdminDetailsLoading(false);
+  }
+
+  async function handleToggleUserBlock(userId, currentStatus) {
+    setIsAdminLoading(true);
+    const success = await runDbOperation(() => toggleUserBlock(userId, currentStatus));
+    if (success) {
+      setAdminSummary(current => current.map(u => u.id === userId ? { ...u, isBlocked: !currentStatus } : u));
+    } else {
+      window.alert("Erro ao alterar status de bloqueio do usuário.");
+    }
+    setIsAdminLoading(false);
+  }
+
+  async function handleDeleteUser(user) {
+    if (!window.confirm(`ATENÇÃO!\n\nTem certeza que deseja EXCLUIR permanentemente a conta de ${user.name} e todos os seus dados?\nEsta ação é irreversível.`)) {
+      return;
+    }
+    setIsAdminLoading(true);
+    const success = await runDbOperation(() => deleteAdminUser(user.id));
+    if (success) {
+      setAdminSummary(current => current.filter(u => u.id !== user.id));
+    } else {
+      window.alert("Erro ao excluir usuário.");
+    }
+    setIsAdminLoading(false);
   }
 
   const maxReportCategory = Math.max(...reportCategoryTotals.map((category) => category.value), 1);
@@ -1713,6 +1738,23 @@ function App() {
     );
   }
 
+  if (localUser && localUser.isBlocked) {
+    return (
+      <main className="app-shell app-shell-enter" style={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: "100vh", padding: "1.5rem", backgroundColor: "var(--bg-color-offset, #f8fafc)" }}>
+        <div style={{ maxWidth: "420px", width: "100%", textAlign: "center", backgroundColor: "var(--bg-color, #ffffff)", padding: "2.5rem 2rem", borderRadius: "1.5rem", boxShadow: "0 12px 40px rgba(0,0,0,0.12)", animation: "smooth-pop-up 0.4s ease-out forwards" }}>
+          <BrandIdentity userName={localUser.name} />
+          <h2 style={{ color: "#e11d48", marginTop: "2rem", marginBottom: "1rem", fontSize: "1.5rem" }}>Acesso Suspenso</h2>
+          <p style={{ lineHeight: 1.6, color: "var(--text-color, #333)", marginBottom: "2.5rem", fontSize: "1rem" }}>
+            Sua conta foi suspensa temporariamente pelo administrador. Você não tem acesso aos seus dados e lançamentos no momento.
+          </p>
+          <button className="primary-button full" type="button" onClick={logoutLocalUser}>
+            Sair da conta
+          </button>
+        </div>
+      </main>
+    );
+  }
+
   return (
     <>
       <style>{`
@@ -2426,6 +2468,24 @@ function App() {
                                     <td style={{ padding: "0.75rem 0.25rem", whiteSpace: "nowrap", fontWeight: "500", color: "var(--text-color)" }}>{user.name}</td>
                                     <td style={{ padding: "0.75rem 0.25rem", color: "var(--text-color-light)" }}>{user.email}</td>
                                     <td style={{ padding: "0.75rem 0.25rem", textAlign: "right" }}>
+                                      {user.email !== "stefferson94@gmail.com" && (
+                                        <>
+                                          <button 
+                                            className="ghost-button" 
+                                            style={{ padding: "0.25rem 0.75rem", fontSize: "0.8rem", borderRadius: "2rem", marginRight: "0.5rem", color: "#e11d48", border: "1px solid #fee2e2", backgroundColor: "#fef2f2" }} 
+                                            onClick={() => handleDeleteUser(user)}
+                                          >
+                                            Excluir
+                                          </button>
+                                          <button 
+                                            className={user.isBlocked ? "primary-button" : "danger-button"} 
+                                            style={{ padding: "0.25rem 0.75rem", fontSize: "0.8rem", borderRadius: "2rem", marginRight: "0.5rem" }} 
+                                            onClick={() => handleToggleUserBlock(user.id, user.isBlocked)}
+                                          >
+                                            {user.isBlocked ? "Desbloquear" : "Bloquear"}
+                                          </button>
+                                        </>
+                                      )}
                                       <button className="ghost-button" style={{ padding: "0.25rem 0.75rem", fontSize: "0.8rem", borderRadius: "2rem" }} onClick={() => handleSelectAdminUser(user)}>Detalhes</button>
                                     </td>
                                   </tr>

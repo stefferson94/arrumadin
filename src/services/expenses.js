@@ -176,9 +176,29 @@ export async function getAdminUsersSummary() {
     email: row.user_email,
     incomes: Number(row.total_incomes),
     expenses: Number(row.total_expenses),
-    balance: Number(row.total_incomes) - Number(row.total_expenses)
+    balance: Number(row.total_incomes) - Number(row.total_expenses),
+    isBlocked: row.is_blocked
   }));
   return { data: mappedData, error: null };
+}
+
+export async function toggleUserBlock(userId, isBlocked) {
+  if (isBlocked) {
+    const { error } = await supabase.from("blocked_users").delete().eq("user_id", userId);
+    return !error;
+  } else {
+    const { error } = await supabase.from("blocked_users").insert([{ user_id: userId }]);
+    return !error;
+  }
+}
+
+export async function deleteAdminUser(userId) {
+  const { error } = await supabase.rpc('delete_user_account', { p_user_id: userId });
+  if (error) {
+    console.error("Erro ao excluir conta do usuário:", error);
+    return false;
+  }
+  return true;
 }
 
 export async function getAdminUserExpenses(userId) {

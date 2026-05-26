@@ -3,10 +3,18 @@ import { supabase } from "./supabase.js";
 export async function getCurrentSession() {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) return null;
+  
+  const { data: blockedData } = await supabase
+    .from("blocked_users")
+    .select("user_id")
+    .eq("user_id", session.user.id)
+    .maybeSingle();
+
   return {
     id: session.user.id,
     name: session.user.user_metadata?.name || session.user.email,
-    email: session.user.email
+    email: session.user.email,
+    isBlocked: !!blockedData
   };
 }
 
@@ -44,7 +52,14 @@ export async function loginLocalAccount({ email, password }) {
     }
     return { ok: false, message: error.message };
   }
-  return { ok: true, user: { id: data.user.id, name: data.user.user_metadata?.name || data.user.email, email: data.user.email } };
+
+  const { data: blockedData } = await supabase
+    .from("blocked_users")
+    .select("user_id")
+    .eq("user_id", data.user.id)
+    .maybeSingle();
+
+  return { ok: true, user: { id: data.user.id, name: data.user.user_metadata?.name || data.user.email, email: data.user.email, isBlocked: !!blockedData } };
 }
 
 export async function requestPasswordReset(email) {
