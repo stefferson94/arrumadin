@@ -111,6 +111,7 @@ function App() {
   const [adminUserDetails, setAdminUserDetails] = useState({ expenses: [], incomes: [] });
   const [isAdminDetailsLoading, setIsAdminDetailsLoading] = useState(false);
   const [adminSearchQuery, setAdminSearchQuery] = useState("");
+  const [adminCurrentPage, setAdminCurrentPage] = useState(1);
   const quickEntryRef = useRef(null);
   const newColumnInputRef = useRef(null);
   const [formError, setFormError] = useState("");
@@ -537,13 +538,19 @@ function App() {
     });
   }, [selectedAdminUser, adminUserYear, adminUserDetails]);
 
-  const displayedAdminUsers = useMemo(() => {
-    const filtered = adminSummary.filter(user =>
+  const filteredAdminUsers = useMemo(() => {
+    return adminSummary.filter(user =>
       user.name.toLowerCase().includes(adminSearchQuery.toLowerCase()) ||
       user.email.toLowerCase().includes(adminSearchQuery.toLowerCase())
     );
-    return adminSearchQuery.trim() ? filtered : filtered.slice(0, 5);
   }, [adminSummary, adminSearchQuery]);
+
+  const adminTotalPages = Math.ceil(filteredAdminUsers.length / 5);
+
+  const displayedAdminUsers = useMemo(() => {
+    const startIndex = (adminCurrentPage - 1) * 5;
+    return filteredAdminUsers.slice(startIndex, startIndex + 5);
+  }, [filteredAdminUsers, adminCurrentPage]);
 
   async function handleSelectAdminUser(user) {
     setSelectedAdminUser(user);
@@ -2376,7 +2383,10 @@ function App() {
                               type="text"
                               placeholder="Pesquisar por nome ou e-mail..."
                               value={adminSearchQuery}
-                              onChange={(e) => setAdminSearchQuery(e.target.value)}
+                              onChange={(e) => {
+                                setAdminSearchQuery(e.target.value);
+                                setAdminCurrentPage(1);
+                              }}
                               style={{
                                 padding: "0.6rem 1rem 0.6rem 2.2rem", 
                                 borderRadius: "2rem", 
@@ -2401,28 +2411,28 @@ function App() {
                         {isAdminLoading ? (
                           <p style={{ marginTop: "1rem" }}>Carregando dados globais...</p>
                         ) : !adminError && (
-                          <div style={{ overflowX: "auto", marginTop: "1rem", backgroundColor: "var(--bg-color-offset)", borderRadius: "0.5rem", padding: "1rem" }}>
+                          <div style={{ overflowX: "auto", marginTop: "1.5rem" }}>
                             <table style={{ width: "100%", textAlign: "left", borderCollapse: "collapse", fontSize: "0.9rem" }}>
                               <thead>
                                 <tr style={{ borderBottom: "1px solid var(--border-color)", color: "var(--text-color-light)" }}>
-                                  <th style={{ padding: "0.5rem" }}>Usuário</th>
-                                  <th style={{ padding: "0.5rem" }}>E-mail</th>
-                                  <th style={{ padding: "0.5rem", textAlign: "right" }}>Ações</th>
+                                  <th style={{ padding: "0.5rem 0.25rem", fontWeight: "600", textTransform: "uppercase", fontSize: "0.75rem", letterSpacing: "0.05em" }}>Usuário</th>
+                                  <th style={{ padding: "0.5rem 0.25rem", fontWeight: "600", textTransform: "uppercase", fontSize: "0.75rem", letterSpacing: "0.05em" }}>E-mail</th>
+                                  <th style={{ padding: "0.5rem 0.25rem", fontWeight: "600", textTransform: "uppercase", fontSize: "0.75rem", letterSpacing: "0.05em", textAlign: "right" }}>Ações</th>
                                 </tr>
                               </thead>
                               <tbody>
                                 {displayedAdminUsers.map(user => (
                                   <tr key={user.id} style={{ borderBottom: "1px solid var(--border-color-light)" }}>
-                                    <td style={{ padding: "0.5rem", whiteSpace: "nowrap", fontWeight: "500" }}>{user.name}</td>
-                                    <td style={{ padding: "0.5rem", color: "var(--text-color-light)" }}>{user.email}</td>
-                                    <td style={{ padding: "0.5rem", textAlign: "right" }}>
-                                      <button className="ghost-button" style={{ padding: "0.25rem 0.75rem", fontSize: "0.85rem" }} onClick={() => handleSelectAdminUser(user)}>Detalhes</button>
+                                    <td style={{ padding: "0.75rem 0.25rem", whiteSpace: "nowrap", fontWeight: "500", color: "var(--text-color)" }}>{user.name}</td>
+                                    <td style={{ padding: "0.75rem 0.25rem", color: "var(--text-color-light)" }}>{user.email}</td>
+                                    <td style={{ padding: "0.75rem 0.25rem", textAlign: "right" }}>
+                                      <button className="ghost-button" style={{ padding: "0.25rem 0.75rem", fontSize: "0.8rem", borderRadius: "2rem" }} onClick={() => handleSelectAdminUser(user)}>Detalhes</button>
                                     </td>
                                   </tr>
                                 ))}
                                 {displayedAdminUsers.length === 0 && (
                                   <tr>
-                                    <td colSpan="3" style={{ padding: "2rem", textAlign: "center", color: "var(--text-color-light)" }}>
+                                    <td colSpan="3" style={{ padding: "2rem", textAlign: "center", color: "var(--text-color-light)", borderBottom: "1px solid var(--border-color-light)" }}>
                                       Nenhum usuário encontrado.
                                     </td>
                                   </tr>
@@ -2430,6 +2440,36 @@ function App() {
                               </tbody>
                             </table>
                           </div>
+                        )}
+                        {!adminError && !isAdminLoading && adminTotalPages > 1 && (
+                          <>
+                            <hr style={{ border: "none", borderTop: "1px solid var(--border-color-light)", margin: "1rem 0" }} />
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                            <span style={{ fontSize: "0.85rem", color: "var(--text-color-light)" }}>
+                              Mostrando {(adminCurrentPage - 1) * 5 + 1} a {Math.min(adminCurrentPage * 5, filteredAdminUsers.length)} de {filteredAdminUsers.length}
+                            </span>
+                            <div style={{ display: "flex", gap: "0.5rem" }}>
+                              <button
+                                className="ghost-button"
+                                type="button"
+                                disabled={adminCurrentPage === 1}
+                                onClick={() => setAdminCurrentPage(p => Math.max(1, p - 1))}
+                                style={{ padding: "0.25rem 0.75rem", fontSize: "0.85rem", opacity: adminCurrentPage === 1 ? 0.5 : 1 }}
+                              >
+                                Anterior
+                              </button>
+                              <button
+                                className="ghost-button"
+                                type="button"
+                                disabled={adminCurrentPage === adminTotalPages}
+                                onClick={() => setAdminCurrentPage(p => Math.min(adminTotalPages, p + 1))}
+                                style={{ padding: "0.25rem 0.75rem", fontSize: "0.85rem", opacity: adminCurrentPage === adminTotalPages ? 0.5 : 1 }}
+                              >
+                                Próxima
+                              </button>
+                            </div>
+                          </div>
+                          </>
                         )}
                       </>
                     ) : (
